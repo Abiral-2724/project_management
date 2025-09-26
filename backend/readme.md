@@ -1,0 +1,5 @@
+- using postgres + prisma 
+- using Nodemailer to send emails . [ particularly otp ] .
+- using cloudinary + multer to upload images .
+- using UUID v7 for genrating id like mongodb id. replacing the default number id from postgres .
+- using zod for schema validation 
