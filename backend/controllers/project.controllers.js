@@ -103,4 +103,91 @@ export const createNewProject = async (req, res) => {
 
         })
     }
+} 
+
+export const getAllProjectsOfUser = async(req ,res) => {
+    try{
+        const userid = req.params.userid ; 
+
+        if(!userid){
+            return res.status(400).json({
+                success : false ,
+                message : "user id not found"
+            })
+        }
+
+        const projectsToWhichUserIsMember = await client.project_Members.findMany({
+            where:{
+                userId : userid
+            }
+        }) ; 
+
+        const projectsToWhichUserIsOwner = await client.projects.findMany({
+            where:{
+                ownerId : userid
+            }
+        }) ; 
+
+        return res.status(200).json({
+            success : true ,
+            MemberProject : projectsToWhichUserIsMember , 
+            OwnerProject : projectsToWhichUserIsOwner
+        })
+
+    }catch(e){
+        console.log(e);
+        return res.status(500).json({
+            success: false,
+            message: "error getting all the projects of the user"
+
+        }) ; 
+    }
+} 
+
+export const getProjectById = async(req ,res) => {
+    try{
+        const projectId = req.params.projectId ; 
+
+        if(!projectId){
+            return res.status(400).json({
+                success : false ,
+                message : "user id not found"
+            })
+        }
+
+        const project = await client.projects.findFirst({
+            where:{
+                id : projectId
+            }
+        }) 
+
+        return res.status(200).json({
+            success : true ,
+            project : project
+        })
+
+    }
+    catch(e){
+        console.log(e);
+        return res.status(500).json({
+            success: false,
+            message: "error getting project by id"
+
+        })
+    }
+}
+
+
+export const addMemberToProject = (req ,res) => {
+    try{
+
+    }
+    catch(e){
+        console.log(e);
+        return res.status(500).json({
+            success: false,
+            message: "error adding memeber to the project"
+
+        })
+    }
 }
