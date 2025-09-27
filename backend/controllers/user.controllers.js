@@ -381,3 +381,42 @@ export const accountSetup = async(req ,res) => {
         });
     }
 }
+
+export const getUserDetails = async(req ,res) => {
+    try{
+            const id = req.params.id ; 
+
+            if(!id){
+                return res.status(400).json({
+                    success : false ,
+                    message : "id not found"
+                })
+            }
+
+            const user = await client.user.findFirst({
+                where : {
+                    id : id
+                }
+            }) ; 
+
+            if(!user){
+                return res.status(400).json({
+                    success : false ,
+                    message : "No user found , invalid ID"
+                })
+            }
+
+            return res.status(200).json({
+                    success : true ,
+                    message : "user found successfully" ,
+                    user : user
+            })
+    }
+    catch(e){
+        console.log(e) ; 
+        return res.status(500).json({
+            success : false ,
+            message : "error getting user , please try again"
+        })
+    }
+}

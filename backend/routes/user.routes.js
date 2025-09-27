@@ -1,11 +1,9 @@
 import express from "express";
-import { accountSetup, login, register, resendOTPEmail, verifyEmail } from "../controllers/user.controllers.js";
-import upload from "../middlewares/multer.js";
+import { authMiddleware } from "../middlewares/auth.middleware.js";
+import { getUserDetails } from "../controllers/user.controllers.js";
+
 const router = express.Router() ; 
 
-router.post('/register' ,register) ; 
-router.post('/login' ,login) ;
-router.post('/verifyemail/:id' ,verifyEmail) ; 
-router.patch('/resendemail/:id' ,resendOTPEmail) ; 
-router.patch('/account_setup/:id' ,upload.single('image'),accountSetup) ; 
+router.get('/getuser/:id' ,authMiddleware,getUserDetails) ;
+
 export default router ;
