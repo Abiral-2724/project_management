@@ -55,12 +55,13 @@ model User {
 
 model Projects {
   id             String            @id @default(uuid(7))
-  projectName    String
+  projectName    String            @db.Text
   description    String            @db.Text
   ownerId        String
   owner          User              @relation(fields: [ownerId], references: [id])
   projectMembers Project_Members[]
   tasks          Project_Tasks[]
+  views          ProjectViews[]
   createdAt      DateTime          @default(now())
 }
 
@@ -85,4 +86,21 @@ model Project_Tasks {
   priority    Priority @default(High)
   deadline    DateTime @default(now())
   createdAt   DateTime @default(now())
+}
+
+model ProjectViews {
+  id         String   @id @default(uuid(7))
+  project_id String
+  project    Projects @relation(fields: [project_id], references: [id])
+  overview   Boolean  @default(false)
+  Board      Boolean  @default(false)
+  List       Boolean  @default(true)
+  Timeline   Boolean  @default(false)
+  Dashboard  Boolean  @default(false)
+  Gantt      Boolean  @default(false)
+  Calenar    Boolean  @default(false)
+  Note       Boolean  @default(false)
+  Workload   Boolean  @default(false)
+  Files      Boolean  @default(false)
+  Messages   Boolean  @default(false)
 }
