@@ -14,47 +14,75 @@ datasource db {
 }
 
 enum Role {
-  OWNER 
+  OWNER
   MANAGER
   MEMBER
 }
 
+enum Priority {
+  Low
+  Medium
+  High
+}
+
+enum userRole {
+  Team_member
+  Manager
+  Director
+  Executive
+  Business_owner
+  Freelancer
+  Student
+  Other
+  Prefer_not_to_say
+  NONE
+}
+
 model User {
-  id         String     @id @default(uuid(7))
-  username String @unique
-  firstname  String
-  lastname   String
-  email      String     @unique
-  password   String
-  profile    String     @default("https://plus.unsplash.com/premium_vector-1728553012443-3cf619e7579d?q=80&w=1480&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D")
-  isVerified Boolean    @default(false)
-  OTP        Int        @default(000000)
-  ownedProjects   Projects[]
+  id             String            @id @default(uuid(7))
+  fullname       String            @default("asana")
+  email          String            @unique
+  password       String
+  profile        String            @default("https://plus.unsplash.com/premium_vector-1728553012443-3cf619e7579d?q=80&w=1480&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D")
+  isVerified     Boolean           @default(false)
+  OTP            Int               @default(000000)
+  myRole         userRole          @default(NONE)
+  ownedProjects  Projects[]
   memberProjects Project_Members[]
-  createdAt  DateTime   @default(now())
+  assignedTask   Project_Tasks[]
+  createdAt      DateTime          @default(now())
 }
 
 model Projects {
-  id   String   @id @default(uuid(7))
-  projectName String
-  description String   @db.Text
-  ownerId     String
-  owner       User     @relation(fields: [ownerId], references: [id])
+  id             String            @id @default(uuid(7))
+  projectName    String
+  description    String            @db.Text
+  ownerId        String
+  owner          User              @relation(fields: [ownerId], references: [id])
   projectMembers Project_Members[]
-  createdAt   DateTime @default(now())
+  tasks          Project_Tasks[]
+  createdAt      DateTime          @default(now())
 }
 
 model Project_Members {
-  id String   @id @default(uuid(7))
+  id        String   @id @default(uuid(7))
   projectId String
-  project Projects @relation(fields: [projectId] ,references: [id])
-  userId String
-  user User @relation(fields: [userId] ,references: [id]) 
-  role Role @default(MEMBER)
-  joinedAt DateTime @default(now())
+  project   Projects @relation(fields: [projectId], references: [id])
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  role      Role     @default(MEMBER)
+  joinedAt  DateTime @default(now())
 }
 
-
-
-
-
+model Project_Tasks {
+  id          String   @id @default(uuid(7))
+  title       String   @db.Text
+  description String   @db.Text
+  project_id  String
+  project     Projects @relation(fields: [project_id], references: [id])
+  assignee_id String
+  assignee    User     @relation(fields: [assignee_id], references: [id])
+  priority    Priority @default(High)
+  deadline    DateTime @default(now())
+  createdAt   DateTime @default(now())
+}

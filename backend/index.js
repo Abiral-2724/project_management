@@ -3,9 +3,7 @@ import { PrismaClient } from "@prisma/client";
 import dotenv from "dotenv";
 
 const app = express() ; 
-
-
-// import userRoute from "./routes/user.route.js";
+import userRoute from "./routes/user.routes.js";
 
 const client = new PrismaClient() ; 
 
@@ -21,7 +19,7 @@ app.use(express.urlencoded({extended : true}))
 
 
 
-// app.use("/api/v1/user" ,userRoute)
+app.use("/api/v1/auth/user" ,userRoute)
 
 app.listen(PORT ,()=>{
     console.log(`Server running at port ${PORT}`) ; 
