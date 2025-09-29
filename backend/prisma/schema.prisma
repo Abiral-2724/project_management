@@ -52,6 +52,7 @@ model User {
   ownedProjects  Projects[]
   memberProjects Project_Members[]
   assignedTask   Project_Tasks[]
+  filesUploaded ProjectFiles[]
   createdAt      DateTime          @default(now())
 }
 
@@ -64,6 +65,7 @@ model Projects {
   projectMembers Project_Members[]
   tasks          Project_Tasks[]
   views          ProjectViews[]
+  projectfiles ProjectFiles[]
   createdAt      DateTime          @default(now())
 }
 
@@ -91,6 +93,7 @@ model Project_Tasks {
   priority       Priority           @default(High)
   startDate      DateTime           @default(now())
   dueDate        DateTime           @default(now())
+  relatedFiles   ProjectFiles[]
   createdAt      DateTime           @default(now())
 }
 
@@ -124,4 +127,16 @@ model ProjectViews {
   Workload   Boolean  @default(false)
   Files      Boolean  @default(false)
   Messages   Boolean  @default(false)
+}
+
+model ProjectFiles {
+  id         String        @id @default(uuid(7))
+  file       String
+  project_id String
+  projectid Projects @relation(fields: [project_id],references: [id])
+  task_id    String
+  taskid     Project_Tasks @relation(fields: [task_id], references: [id])
+  uploader_id String
+  uploaderid User @relation(fields: [uploader_id] ,references: [id])
+  uploadedAt        DateTime      @default(now()) 
 }

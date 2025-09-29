@@ -4,9 +4,10 @@ import dotenv from "dotenv";
 
 const app = express() ; 
 import userAuthRoute from "./routes/user.auth.routes.js";
-import userRoute from "./routes/user.routes.js"
-import projectRoute from "./routes/project.routes.js"
-import tasksRoute from "./routes/project.tasks.route.js"
+import userRoute from "./routes/user.routes.js" ;
+import projectRoute from "./routes/project.routes.js" ;
+import tasksRoute from "./routes/project.tasks.route.js" ;
+import filesRoute from './routes/project.files.routes.js' ; 
 const client = new PrismaClient() ; 
 
 
@@ -26,7 +27,9 @@ app.use("/api/v1/user" ,userRoute) ;
 
 app.use("/api/v1",projectRoute) ;
 
-app.use("/api/v1/task" ,tasksRoute)
+app.use("/api/v1/task" ,tasksRoute) ;
+
+app.use("/api/v1/files" ,filesRoute)
 
 app.listen(PORT ,()=>{
     console.log(`Server running at port ${PORT}`) ; 
