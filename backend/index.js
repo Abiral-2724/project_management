@@ -6,6 +6,7 @@ const app = express() ;
 import userAuthRoute from "./routes/user.auth.routes.js";
 import userRoute from "./routes/user.routes.js"
 import projectRoute from "./routes/project.routes.js"
+import tasksRoute from "./routes/project.tasks.route.js"
 const client = new PrismaClient() ; 
 
 
@@ -23,7 +24,9 @@ app.use(express.urlencoded({extended : true})) ;
 app.use("/api/v1/auth/user" ,userAuthRoute) ; 
 app.use("/api/v1/user" ,userRoute) ; 
 
-app.use("/api/v1",projectRoute)
+app.use("/api/v1",projectRoute) ;
+
+app.use("/api/v1/task" ,tasksRoute)
 
 app.listen(PORT ,()=>{
     console.log(`Server running at port ${PORT}`) ; 
