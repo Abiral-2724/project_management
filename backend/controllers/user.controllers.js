@@ -1,7 +1,7 @@
 import { PrismaClient } from '@prisma/client';
 import dotenv from 'dotenv'
 import bcrypt from 'bcrypt'
-import {success, z} from 'zod' ; 
+import {z} from 'zod' ; 
 import jwt from 'jsonwebtoken'
 import nodemailer from 'nodemailer'
 import cloudinary from "../utils/cloudinary.js";

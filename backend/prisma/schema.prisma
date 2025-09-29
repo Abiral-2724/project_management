@@ -15,8 +15,10 @@ datasource db {
 
 enum Role {
   OWNER
-  MANAGER
-  MEMBER
+  ADMIN
+  EDITOR
+  COMMENTER
+  VIEWER
 }
 
 enum Priority {
@@ -69,9 +71,9 @@ model Project_Members {
   id        String   @id @default(uuid(7))
   projectId String
   project   Projects @relation(fields: [projectId], references: [id])
-  userId    String
-  user      User     @relation(fields: [userId], references: [id])
-  role      Role     @default(MEMBER)
+  role      Role     @default(EDITOR)
+  emailuser String
+  user     User     @relation(fields: [emailuser], references: [email])
   joinedAt  DateTime @default(now())
 }
 
