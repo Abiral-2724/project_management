@@ -420,3 +420,51 @@ export const getUserDetails = async(req ,res) => {
         })
     }
 }
+
+export const getAllProjectUserIsPartof = async (req ,res) => {
+    try{
+        const userId = req.params.userId ; 
+
+        const user = await client.user.findFirst({
+            where : {
+                id : userId
+            }
+        })
+
+        const userProjectPartOf = await client.project_Members.findMany({
+            where : {
+                emailuser : user.email , 
+            }
+        })
+
+        let projectdetails = [] ; 
+
+        for(const pro of userProjectPartOf){
+            const projectId = pro.projectId ; 
+            const role = pro.role ;
+
+            const projectdetail = await client.projects.findFirst({
+                where : {
+                    id : projectId
+                }
+            }) ; 
+
+            projectdetail.userRoleInProject = role ;
+
+            projectdetails.push(projectdetail) ;
+        }
+
+        return res.status(200).json({
+            success : true ,
+            Projects : projectdetails
+        })
+    }
+    catch(e){
+        console.log(e);
+        return res.status(500).json({
+            success: false,
+            message: "error getting all project of the user"
+
+        })
+    }
+}
