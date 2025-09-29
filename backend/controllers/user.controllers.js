@@ -170,6 +170,25 @@ export const login = async(req ,res) => {
    
 }
 
+export const logout = async (req ,res) => {
+    try{
+
+        // use redis to add token to the black list
+
+        return res.status(200).json({
+            success : true ,
+            message : "user logout successfully"
+        })
+    }
+    catch(e){
+        console.log(e) ; 
+        return res.status(500).json({
+            success : false ,
+            message : "error while logout"
+        })
+    }
+}
+
 export const verifyEmail = async(req ,res) => {
     try{
         const reqBody = z.object({
