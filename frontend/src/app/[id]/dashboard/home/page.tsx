@@ -79,9 +79,7 @@ export default function AsanaDashboard({params}) {
     <div className="flex h-screen bg-gray-50">
     
       <div className="flex-1 overflow-auto">
-        {/* Top Bar */}
-        <Topbar user={user}></Topbar>
-
+        
         {/* Customize Drawer */}
         <Drawer open={isCustomizeOpen} onOpenChange={setIsCustomizeOpen} direction="right">
           <DrawerContent className="h-full w-[500px] fixed right-0 top-0 rounded-l-xl">

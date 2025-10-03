@@ -58,11 +58,14 @@ export default function AsanaProjectViews() {
             );
 
             console.log(response.data);
-
-            localStorage.removeItem('project_name');
-            localStorage.removeItem('project_description')
+            
+            localStorage?.removeItem('project_name');
+            localStorage?.removeItem('project_description')
             toast.success("Project created successfully");
-            router.push('/');
+            const url = `${response.data.project.ownerId}/project/${response.data.project.id}/Overview`
+            console.log(url)
+
+            router.push(`/${response.data.project.ownerId}/dashboard/project/${response.data.project.id}/Overview`);
         }
         catch (e: any) {
             const errorMessage =

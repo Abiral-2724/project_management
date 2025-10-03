@@ -9,7 +9,7 @@ import { useRouter } from 'next/navigation'
 
 type Props = {}
 
-const Topbar = ({user}) => {
+const Topbar = ({user} : any) => {
 
     const router = useRouter() ; 
 
@@ -21,7 +21,7 @@ const Topbar = ({user}) => {
 
                     toast.success(response.data.message) ; 
                 router.push('/auth/login') ; 
-        }catch(e){
+        }catch(e : any){
             const errorMessage =
             e.response?.data?.message || e.message || "Something went wrong";
           toast.error(errorMessage);
