@@ -14,8 +14,8 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 
-export default function AsanaSignup({ params }) {
-  const { id, email } = React.use(params);
+export default function AsanaSignup({ params } : any) {
+  const { id , email } : any = React.use(params);
   const decodedEmail = decodeURIComponent(email);
 
   const router = useRouter();

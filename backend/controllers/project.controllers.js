@@ -10,13 +10,13 @@ export const createNewProject = async (req, res) => {
             description: z.string().min(10).max(200),
             views: z.array(
                 z.enum([
-                    "overview",
+                    "Overview",
                     "Board",
                     "List",
                     "Timeline",
                     "Dashboard",
                     "Gantt",
-                    "Calenar",
+                    "Calendar",
                     "Note",
                     "Workload",
                     "Files",
@@ -86,12 +86,12 @@ export const createNewProject = async (req, res) => {
 
         const viewData = {
             project_id: project.id,
-            overview: views.includes("overview"),
+            Overview: views.includes("Overview"),
             Board: views.includes("Board"),
             Timeline: views.includes("Timeline"),
             Dashboard: views.includes("Dashboard"),
             Gantt: views.includes("Gantt"),
-            Calenar: views.includes("Calenar"),
+            Calendar: views.includes("Calendar"),
             Note: views.includes("Note"),
             Workload: views.includes("Workload"),
             Files: views.includes("Files"),

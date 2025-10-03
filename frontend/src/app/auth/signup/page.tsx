@@ -14,7 +14,7 @@ export default function AsanaSignup() {
 
     const router = useRouter() ; 
 
-    const handleformsubmit = async (e) => {
+    const handleformsubmit = async (e:any) => {
         e.preventDefault();
         try{
            
@@ -30,7 +30,7 @@ export default function AsanaSignup() {
             toast.success(response.data?.message || "User registered successfully 🎉");
             router.push(`/auth/otp/${response.data.user.id}`) ; 
         }
-        catch(e){
+        catch(e : any){
             const errorMessage =
     e.response?.data?.message || e.message || "Something went wrong";
   toast.error(errorMessage);

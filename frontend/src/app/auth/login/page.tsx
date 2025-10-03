@@ -14,7 +14,7 @@ export default function AsanaSignin() {
 
     const router = useRouter() ; 
 
-    const handleSubmit = async(e) =>{
+    const handleSubmit = async(e:any) =>{
         e.preventDefault() ; 
         try{
             setLoading(true) ; 
@@ -29,9 +29,9 @@ export default function AsanaSignin() {
             localStorage.setItem("token" ,accessToken) ; 
 
             toast.success(response.data?.message || "User loged in successfully 🎉");
-            router.push('/') ; 
+            router.push(`/${response.data.id}/home`) ; 
 
-        }catch(e){
+        }catch(e:any){
 
             const errorMessage =
     e.response?.data?.message || e.message || "Something went wrong";

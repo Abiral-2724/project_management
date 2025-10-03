@@ -6,9 +6,9 @@ import axios from 'axios';
 import { toast } from 'react-toastify';
 import { useRouter } from 'next/navigation';
 
-export default function AsanaVerification({params}) {
+export default function AsanaVerification({params} : any) {
 
-  const { id } = React.use(params);
+  const { id } : any = React.use(params);
   const userId = id ;
 
   const [code, setCode] = useState(['', '', '', '', '', '']);
@@ -26,7 +26,7 @@ export default function AsanaVerification({params}) {
 
         SetEmail(response.data.user.email) ; 
       }
-      catch(e){
+      catch(e : any){
         const errorMessage = e.response?.data?.message || e.message || "Something went wrong";
           toast.error(errorMessage) ; 
       }
@@ -36,7 +36,7 @@ export default function AsanaVerification({params}) {
     
   } ,[]) ; 
 
-  const handlesubmit = async (e) => {
+  const handlesubmit = async (e : any) => {
     e.preventDefault() ;
     try{
       setLoading(true) ; 
@@ -49,7 +49,7 @@ export default function AsanaVerification({params}) {
         toast.success(response.data.message); 
         router.push(`/auth/account_setup/${id}/${email}`) ; 
     }
-    catch(e){
+    catch(e : any){
 
       const errorMessage =
       e.response?.data?.message || e.message || "Something went wrong";
@@ -61,13 +61,13 @@ export default function AsanaVerification({params}) {
     }
   }
 
-  const resendotpfunction = async(e) => {
+  const resendotpfunction = async(e : any) => {
     try{
       const response = await axios.patch(`http://localhost:4000/api/v1/auth/user/resendemail/${userId}`) ; 
 
       toast.success(response.data.message) ; 
 
-    }catch(e){
+    }catch(e : any){
       const errorMessage =
       e.response?.data?.message || e.message || "Something went wrong";
     toast.error(errorMessage);
@@ -76,7 +76,7 @@ export default function AsanaVerification({params}) {
   }
 
 
-  const handleInputChange = (index, value) => {
+  const handleInputChange = (index:any, value:any) => {
     if (value.length <= 1 && /^\d*$/.test(value)) {
       const newCode = [...code];
       newCode[index] = value;
@@ -88,13 +88,13 @@ export default function AsanaVerification({params}) {
     }
   };
 
-  const handleKeyDown = (index, e) => {
+  const handleKeyDown = (index:any, e:any) => {
     if (e.key === 'Backspace' && !code[index] && index > 0) {
       inputRefs.current[index - 1]?.focus();
     }
   };
 
-  const handlePaste = (e) => {
+  const handlePaste = (e:any) => {
     e.preventDefault();
     const pastedData = e.clipboardData.getData('text').slice(0, 6);
     if (/^\d+$/.test(pastedData)) {
@@ -132,7 +132,7 @@ export default function AsanaVerification({params}) {
             {code.map((digit, index) => (
               <input
                 key={index}
-                ref={el => inputRefs.current[index] = el}
+                ref={el => inputRefs.current[index] = el} 
                 type="text"
                 inputMode="numeric"
                 maxLength={1}
