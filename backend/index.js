@@ -1,6 +1,7 @@
 import express from "express";
 import { PrismaClient } from "@prisma/client";
 import dotenv from "dotenv";
+import cors from 'cors'
 
 const app = express() ; 
 import userAuthRoute from "./routes/user.auth.routes.js";
@@ -20,6 +21,12 @@ const PORT = process.env.PORT|| 4000 ;
 app.use(express.json()) ;
 app.use(express.urlencoded({extended : true})) ; 
 
+const corsOptions = {
+    origin: 'http://localhost:3001',
+    credentials: true, // Enable credentials (cookies)
+};
+
+app.use(cors(corsOptions)) ; 
 
 
 app.use("/api/v1/auth/user" ,userAuthRoute) ; 

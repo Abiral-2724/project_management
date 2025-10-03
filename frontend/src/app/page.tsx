@@ -14,10 +14,15 @@ import {
   NavigationMenuTrigger,
 } from '@/components/ui/navigation-menu';
 import Image from 'next/image';
+import { useRouter } from 'next/navigation';
+import axios from 'axios';
+import { toast } from 'react-toastify';
 
 const AsanaLandingPage = () => {
   const [currentSlide, setCurrentSlide] = useState(0);
   const scrollContainerRef = useRef(null); 
+
+  const router = useRouter() ; 
 
   const AsanaLogo = () => (
     <div className="flex items-center justify-center w-10 h-10">
@@ -92,6 +97,23 @@ const AsanaLandingPage = () => {
     }
   };
 
+  const handlelogout = async () => {
+    try{
+        const response = await axios.get('http://localhost:4000/api/v1/auth/user/logout') ; 
+
+        localStorage.removeItem('token') ; 
+        toast.success(response.data.message) ;
+        router.push('/auth/login')
+    }
+    catch(e){
+
+      const errorMessage =
+      e.response?.data?.message || e.message || "Something went wrong";
+    toast.error(errorMessage);
+              console.log("Error occurred while submitting form:", e.response?.data || e.message);
+    }
+  }
+
   return (
     <div className="min-h-screen">
       {/* Navigation */}
@@ -128,7 +150,14 @@ const AsanaLandingPage = () => {
               <Globe className="w-6 h-8" />
             </Button>
             <Button variant="ghost" className="text-sm hidden md:inline-flex">Contact sales</Button>
-            <Button variant="ghost" className="text-sm hidden md:inline-flex">Log In</Button>
+              {
+localStorage?.getItem('token') ? (<Button variant="ghost" className="text-sm hidden md:inline-flex" onClick={() => handlelogout()}>
+  logout
+ </Button>) : (<Button variant="ghost" className="text-sm hidden md:inline-flex" onClick={() => router.push('/auth/login')}>
+             login
+            </Button>)
+              }
+            
             <Button className="bg-black text-white hover:bg-rose-400 hover:text-black">
               Get started
             </Button>
@@ -217,7 +246,7 @@ const AsanaLandingPage = () => {
           </Button>
         </div>
       </section>
-      
+
       {/* Use Cases Section */}
       <section className="py-20 bg-gradient-to-b from-white to-gray-50">
         <div className="max-w-7xl mx-auto px-6">

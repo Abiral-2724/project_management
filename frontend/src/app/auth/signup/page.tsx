@@ -3,9 +3,43 @@ import React, { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import Loader from '@/components/Loader';
+import axios from 'axios' ; 
+import { useRouter } from 'next/navigation';
+import { toast } from "react-toastify";
 
 export default function AsanaSignup() {
     const [loading ,setLoading] = useState(false); 
+    const [email ,setEmail] = useState('') ; 
+    const [password ,setPassword] = useState('') ; 
+
+    const router = useRouter() ; 
+
+    const handleformsubmit = async (e) => {
+        e.preventDefault();
+        try{
+           
+            setLoading(true)
+            const response = await axios.post('http://localhost:4000/api/v1/auth/user/register',
+                {
+                    email ,
+                    password
+                }
+            ) ; 
+
+            console.log("response = " ,response) ; 
+            toast.success(response.data?.message || "User registered successfully 🎉");
+            router.push(`/auth/otp/${response.data.user.id}`) ; 
+        }
+        catch(e){
+            const errorMessage =
+    e.response?.data?.message || e.message || "Something went wrong";
+  toast.error(errorMessage);
+            console.log("Error occurred while submitting form:", e.response?.data || e.message);
+        } 
+        finally{
+            setLoading(false) ; 
+        }
+    }
   return (
     <div className="min-h-screen bg-[#f6f8f9] flex flex-col">
       {/* Header */}
@@ -21,19 +55,19 @@ export default function AsanaSignup() {
       {/* Main Content */}
       <main className="flex-1 flex items-center justify-center px-4">
         <div className="w-full max-w-md">
-          {/* Heading */}
+          
           <h1 className="text-center text-[#151B26] text-[42px] leading-tight font-medium mb-12">
             You're one click away<br />from less busywork
           </h1>
 
-          {/* Sign-up Form */}
+          <form onSubmit={handleformsubmit}>
           <div className="space-y-4">
-          
-            {/* Email Input with Continue Button */}
             <div className="flex">
               <Input 
                 type="email" 
                 placeholder="name@company.com"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
                 className="flex-1 h-14 text-base placeholder:text-gray-400 focus-visible:ring-0 focus-visible:ring-offset-0 bg-white"
               />
              
@@ -43,6 +77,8 @@ export default function AsanaSignup() {
               <Input 
                 type="password" 
                 placeholder="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
                 className="flex-1 h-14 text-base placeholder:text-gray-400 focus-visible:ring-0 focus-visible:ring-offset-0 bg-white"
               />
              
@@ -52,7 +88,7 @@ export default function AsanaSignup() {
             <Button 
   className="w-full h-14 px-8 bg-[#151B26] hover:bg-rose-400 hover:text-black text-white text-base font-medium flex items-center justify-center gap-2"
   disabled={loading} // disable while loading
-  onClick={() => setLoading(!loading)}
+  type='submit'
 >
   {loading ? (
     <>
@@ -63,9 +99,8 @@ export default function AsanaSignup() {
     "Continue"
   )}
 </Button>
-
-            {/* Terms Text */}
-            <p className="text-center text-sm text-gray-600 mt-6">
+  
+<p className="text-center text-sm text-gray-600 mt-6">
               By signing up, you agree to Asana's{' '}
               <a href="#" className="text-[#151B26] font-semibold hover:underline">
                 Terms of Service
@@ -77,6 +112,16 @@ export default function AsanaSignup() {
               .
             </p>
           </div>
+
+          <p className="text-center text-sm text-gray-600 mt-6">
+              Already have a account ? {' '}
+              <a href="/auth/login" className="text-[#151B26] font-semibold hover:underline">
+               Login
+              </a>
+            </p>
+         
+          </form>
+          
         </div>
       </main>
 

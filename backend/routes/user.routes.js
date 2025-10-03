@@ -4,7 +4,7 @@ import { getAllProjectUserIsPartof, getUserDetails } from "../controllers/user.c
 
 const router = express.Router() ; 
 
-router.get('/getuser/:id' ,authMiddleware,getUserDetails) ;
+router.get('/getuser/:id',getUserDetails) ;
 
 router.get('/:userId/project' ,getAllProjectUserIsPartof)  ;
 

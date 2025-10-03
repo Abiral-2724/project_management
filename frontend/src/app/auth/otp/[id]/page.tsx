@@ -1,12 +1,80 @@
 'use client'
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import Loader from '@/components/Loader';
+import axios from 'axios';
+import { toast } from 'react-toastify';
+import { useRouter } from 'next/navigation';
 
-export default function AsanaVerification() {
+export default function AsanaVerification({params}) {
+
+  const { id } = React.use(params);
+  const userId = id ;
+
   const [code, setCode] = useState(['', '', '', '', '', '']);
   const inputRefs = useRef([]);
   const [loading ,setLoading] = useState(false);
+  const [email ,SetEmail] = useState('') ; 
+
+  const router = useRouter()  ; 
+
+  useEffect(() => {
+
+    const finduserinfo = async () => {
+      try{
+        const response = await axios.get(`http://localhost:4000/api/v1/user/getuser/${userId}`) ; 
+
+        SetEmail(response.data.user.email) ; 
+      }
+      catch(e){
+        const errorMessage = e.response?.data?.message || e.message || "Something went wrong";
+          toast.error(errorMessage) ; 
+      }
+    }
+
+    finduserinfo() ; 
+    
+  } ,[]) ; 
+
+  const handlesubmit = async (e) => {
+    e.preventDefault() ;
+    try{
+      setLoading(true) ; 
+        
+      const num = Number(code.join('')) ; 
+        const response = await axios.post(`http://localhost:4000/api/v1/auth/user/verifyemail/${userId}` ,{
+          otp:num
+        })
+      
+        toast.success(response.data.message); 
+        router.push(`/auth/account_setup/${id}/${email}`) ; 
+    }
+    catch(e){
+
+      const errorMessage =
+      e.response?.data?.message || e.message || "Something went wrong";
+    toast.error(errorMessage);
+              console.log("Error occurred while submitting form:", e.response?.data || e.message);
+
+    }finally{
+      setLoading(false)
+    }
+  }
+
+  const resendotpfunction = async(e) => {
+    try{
+      const response = await axios.patch(`http://localhost:4000/api/v1/auth/user/resendemail/${userId}`) ; 
+
+      toast.success(response.data.message) ; 
+
+    }catch(e){
+      const errorMessage =
+      e.response?.data?.message || e.message || "Something went wrong";
+    toast.error(errorMessage);
+              console.log("Error occurred while submitting form:", e.response?.data || e.message);
+    }
+  }
+
 
   const handleInputChange = (index, value) => {
     if (value.length <= 1 && /^\d*$/.test(value)) {
@@ -36,6 +104,8 @@ export default function AsanaVerification() {
     }
   };
 
+
+
   return (
     <div className="min-h-screen bg-[#f6f5f4] flex flex-col">
       <header className="p-6">
@@ -54,9 +124,10 @@ export default function AsanaVerification() {
           </h1>
           
           <p className="text-[#151b26] text-center mb-8">
-            We sent a six digit code to 2724test2004@gmail.com. Enter the code below:
+            We sent a six digit code to {email}. Enter the code below:
           </p>
 
+          <form onSubmit={handlesubmit}>
           <div className="flex justify-center gap-3 mb-6">
             {code.map((digit, index) => (
               <input
@@ -77,9 +148,8 @@ export default function AsanaVerification() {
           <Button 
   className="w-full h-14 px-8 bg-[#151B26] hover:bg-rose-400 hover:text-black text-white text-base font-medium flex items-center justify-center gap-2"
   disabled={loading} // disable while loading
-  onClick={() => {console.log('Verify:', code.join(''))
-  setLoading(!loading)
-  }}
+  type='submit'
+ 
 >
   {loading ? (
     <>
@@ -90,12 +160,14 @@ export default function AsanaVerification() {
     "Verify"
   )}
 </Button>
+          </form>
+         
 
          
 
           <p className="text-center text-[#6d6e6f] text-sm mt-8">
             Didn't receive an email? Try checking your junk folder.{' '}
-            <button className="text-[#151b26] font-medium hover:underline">
+            <button className="text-[#151b26] font-medium hover:underline" onClick={() => resendotpfunction()}>
               Resend code
             </button>
             .
