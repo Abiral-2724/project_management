@@ -50,7 +50,6 @@ model User {
   OTP            Int               @default(000000)
   myRole         userRole          @default(NONE)
   ownedProjects  Projects[]
-  memberProjects Project_Members[]
   assignedTask   Project_Tasks[]
   filesUploaded ProjectFiles[]
   createdAt      DateTime          @default(now())
@@ -75,7 +74,6 @@ model Project_Members {
   project   Projects @relation(fields: [projectId], references: [id])
   role      Role     @default(EDITOR)
   emailuser String
-  user      User     @relation(fields: [emailuser], references: [email])
   joinedAt  DateTime @default(now())
 }
 
