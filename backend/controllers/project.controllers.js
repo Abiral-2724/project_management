@@ -129,11 +129,31 @@ export const getAllProjectsOfUser = async(req ,res) => {
             })
         }
 
+        const user = await client.user.findFirst({
+            where : {
+                id : userid
+            }
+        })
+
         const projectsToWhichUserIsMember = await client.project_Members.findMany({
             where:{
-                userId : userid
+                emailuser : user.email
             }
         }) ; 
+
+        const memberprojectdetail = [] ; 
+        projectsToWhichUserIsMember.map(async (project) => {
+            const id = project.projectId ; 
+            const projectdetail = await client.projects.findFirst({
+                where:{
+                    id : id,
+                    
+                }
+            }) ; 
+            if(projectdetail.ownerId !== userid){
+            memberprojectdetail.push(projectdetail)
+            }
+        })
 
         const projectsToWhichUserIsOwner = await client.projects.findMany({
             where:{
@@ -143,7 +163,7 @@ export const getAllProjectsOfUser = async(req ,res) => {
 
         return res.status(200).json({
             success : true ,
-            MemberProject : projectsToWhichUserIsMember , 
+            MemberProject : memberprojectdetail , 
             OwnerProject : projectsToWhichUserIsOwner
         })
 

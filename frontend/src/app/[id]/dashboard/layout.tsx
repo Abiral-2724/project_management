@@ -9,9 +9,10 @@ export default function HomeLayout({
   children, params
 }: {
   children: React.ReactNode;
-  params: {id : string} ;
+  params: Promise<{ id: string }> ;
 }) {
-  const {id} = params ;
+  const unwrappedParams = React.use(params);
+  const { id } = unwrappedParams;
   const [user ,setUser] = useState({}) ; 
 
   useEffect(() => {
@@ -36,7 +37,7 @@ export default function HomeLayout({
  
   return (
     <div className="flex">
-      <Sidebar />
+      <Sidebar params={params}/>
       <main className="flex-1">
        <Topbar user={user}></Topbar>
         {children}

@@ -13,7 +13,7 @@ function decodeJwtPayload(token : any) {
   }
 
 const decodetokenfunction = () => {
-    const token = localStorage.getItem("token") ; 
+    const token = localStorage?.getItem("token") ; 
       const user = decodeJwtPayload(token);
     return user ; 
 }

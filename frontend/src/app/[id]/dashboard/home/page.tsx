@@ -13,8 +13,8 @@ import Sidebar from '@/components/Sidebar';
 import { useRouter } from 'next/navigation';
 import Topbar from '@/components/Topbar';
 
-export default function AsanaDashboard({params}) {
-    const {id} = React.use(params);
+export default function AsanaDashboard({params} : any) {
+    const {id} : any = React.use(params);
   const [tasks, setTasks] = useState([
     { id: 1, title: 'heelloo', completed: false, dueDate: 'Today' }
   ]);

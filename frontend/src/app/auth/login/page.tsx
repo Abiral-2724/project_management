@@ -29,7 +29,7 @@ export default function AsanaSignin() {
             localStorage.setItem("token" ,accessToken) ; 
 
             toast.success(response.data?.message || "User loged in successfully 🎉");
-            router.push(`/${response.data.id}/home`) ; 
+            router.push(`/${response.data.id}/dashboard/home`) ; 
 
         }catch(e:any){
 
