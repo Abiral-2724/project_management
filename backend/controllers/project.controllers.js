@@ -217,7 +217,7 @@ export const getAllMemberOfProject = async(req ,res) => {
         if(!projectId){
             return res.status(400).json({
                 success : false ,
-                message : "user id not found"
+                message : "project id not found"
             })
         }
 
@@ -243,6 +243,201 @@ export const getAllMemberOfProject = async(req ,res) => {
     
 }
 
+export const getViewsOfProject = async(req ,res) => {
+    try{
+        const projectId = req.params.projectId ; 
+
+        if(!projectId){
+            return res.status(400).json({
+                success : false ,
+                message : "project id not found"
+            })
+        } 
+
+        const views = await client.projectViews.findFirst({
+            where : {
+                project_id : projectId
+            }
+        }) ; 
+
+        return res.status(200).json({
+            message : true ,
+            views : views
+        })
+    }
+    catch(e){
+        console.log(e);
+        return res.status(500).json({
+            success: false,
+            message: "error getting all views of the project"
+
+        })
+    }
+}
+
+
+export const getCompleteDetailOfProject = async(req ,res) => {
+    try{
+            const userId = req.params.userId ; 
+            const projectId = req.params.projectId ;
+            if(!projectId){
+                return res.status(400).json({
+                    success : false ,
+                    message : "project id not found"
+                })
+            } 
+
+            if(!userId){
+                return res.status(400).json({
+                    success : false ,
+                    message : "user id not found"
+                })
+            }  
+
+
+            const projectDetail = await client.projects.findFirst({
+                where : {
+                    id : projectId
+                }
+            }) ; 
+
+            const member = await client.project_Members.findMany({
+                where : {
+                    projectId : projectId
+                }
+            }) ; 
+
+            const memberDetails = [] ; 
+
+            for(const user of member){
+                const email = user.emailuser ; 
+
+                const userdetail = await client.user.findFirst({
+                    where : {
+                        email :email
+                    }
+                }) ; 
+                memberDetails.push({
+                    "id": user.id ,
+                    "projectId": user.projectId,
+                    "role": user.role,
+                    "emailuser": user.emailuser,
+                    "joinedAt": user.joinedAt ,
+                    "profile" : userdetail?.profile ,
+                    "fullname" : userdetail?.fullname
+                })
+            }
+
+            const views = await client.projectViews.findFirst({
+                where : {
+                    project_id : projectId
+                }
+            }) ;
+
+
+            return res.status(200).json({
+                message : true ,
+                projectDetail : projectDetail ,
+                projectMember : memberDetails ,
+                projectViews : views
+            })
+
+
+
+    }catch(e){
+        console.log(e);
+        return res.status(500).json({
+            success: false,
+            message: "error getting all detail of the project "
+
+        })
+    }
+}
+
+export const getProjectTimeline = async(req ,res) => {
+    try{
+        const userId = req.params.userId ; 
+        const projectId = req.params.projectId ;
+        if(!projectId){
+            return res.status(400).json({
+                success : false ,
+                message : "project id not found"
+            })
+        } 
+
+        if(!userId){
+            return res.status(400).json({
+                success : false ,
+                message : "user id not found"
+            })
+        }  
+
+        const projectTimeline = [] ; 
+
+        const projectDetail = await client.projects.findFirst({
+            where : {
+                id : projectId
+            }
+        }) ; 
+
+        projectTimeline.push({
+            Type : "Project created" ,
+            createdTime : projectDetail.createdAt
+        }) ; 
+
+        const projectMember = await client.project_Members.findMany({
+            where : {
+                projectId : projectId
+            }
+        }) ; 
+
+        for(const member of projectMember){
+            const userEmail = member.emailuser ; 
+
+            const userDetail = await client.user.findFirst({
+                where : {
+                    email : userEmail
+                }
+            })
+            projectTimeline.push({
+                Type : "Someone joined" ,
+                email : member.emailuser ,
+                createdTime : member.joinedAt,
+                profile : userDetail?.profile
+            })
+        }
+
+        projectTimeline.sort((a, b) => new Date(a.createdTime).getTime() - new Date(b.createdTime).getTime());
+
+
+        return res.status(200).json({
+            message : "project timeline extracted" ,
+            timeline : projectTimeline ,
+            
+        })
+
+    }catch(e){
+        console.log(e);
+        return res.status(500).json({
+            success: false,
+            message: "error getting project timeline"
+
+        })
+    }
+}
+
+const getProjectMemberWithTheirdetail = async(req ,res) => {
+    try{    
+
+    }catch(e){
+        console.log(e);
+        return res.status(500).json({
+            success: false,
+            message: "error getting project member with their detail"
+
+        })
+    }
+}
 
 
 export const sendingInviteToAddMemberToProject = async (req ,res) => {

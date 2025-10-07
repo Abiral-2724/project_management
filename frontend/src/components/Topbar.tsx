@@ -21,7 +21,7 @@ const Topbar = ({user} : any) => {
 
                     toast.success(response.data.message) ; 
                 router.push('/auth/login') ; 
-        }catch(e : any){
+        }catch(e :any){
             const errorMessage =
             e.response?.data?.message || e.message || "Something went wrong";
           toast.error(errorMessage);
