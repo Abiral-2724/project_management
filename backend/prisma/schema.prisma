@@ -47,11 +47,13 @@ model User {
   password       String
   profile        String            @default("https://plus.unsplash.com/premium_vector-1728553012443-3cf619e7579d?q=80&w=1480&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D")
   isVerified     Boolean           @default(false)
-  OTP            Int               @default(000000)
+  OTP            Int               @default(0)
   myRole         userRole          @default(NONE)
   ownedProjects  Projects[]
-  assignedTask   Project_Tasks[]
+  assignedTask   Project_Tasks[] @relation("UserTasks")
   filesUploaded ProjectFiles[]
+  createdTask Project_Tasks[]
+  createdSubTasks Project_SubTasks[]
   createdAt      DateTime          @default(now())
 }
 
@@ -85,13 +87,15 @@ model Project_Tasks {
   project_id     String
   project        Projects           @relation(fields: [project_id], references: [id])
   assignee_email String
-  assignee       User               @relation(fields: [assignee_email], references: [email])
+  assignee       User               @relation("UserTasks" ,fields: [assignee_email], references: [email])
   mark_complete  Boolean            @default(false)
   subTasks       Project_SubTasks[]
   priority       Priority           @default(High)
   startDate      DateTime           @default(now())
   dueDate        DateTime           @default(now())
   relatedFiles   ProjectFiles[]
+  project_task_creator_id String
+  creator User @relation(fields: [project_task_creator_id] ,references: [id])
   createdAt      DateTime           @default(now())
 }
 
@@ -106,6 +110,8 @@ model Project_SubTasks {
   assignee_email   String
   startDate        DateTime      @default(now())
   dueDate          DateTime      @default(now())
+  project_sub_task_creator_id String
+  creator User @relation(fields: [project_sub_task_creator_id] ,references: [id])
   mark_complete    Boolean       @default(false)
   createdAt        DateTime      @default(now())
 }

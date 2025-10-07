@@ -36,48 +36,65 @@ export const addTasks = async (req ,res) => {
             })
         }
 
-        const {title ,priority,startDate ,dueDate ,assigneEmail,status ,description} = req.body ; 
+        const {tasks} = req.body ; 
 
-        if(!title || !priority || !startDate || !dueDate || !assigneEmail || !status){
+        if(!Array.isArray(tasks) || tasks.length === 0){
             return res.status(400).json({
                 success: false,
-                message: "all fields are required"
+                message: "tasks array is required"
     
             })
         } 
 
-        const checkassigne = await client.project_Members.findMany({
+        const createdTasks = [] ; 
+
+        for(const task of tasks){
+            const { title, priority, startDate, dueDate, assigneEmail, status, description } = task;
+
+            if (!title || !priority || !startDate || !dueDate || !assigneEmail || !status) {
+                return res.status(400).json({
+                    success: false,
+                    message: "All fields are required for each task"
+                });
+            }
+
+            const checkassigne = await client.project_Members.findMany({
                 where:{
                     projectId : projectId ,
                     emailuser : assigneEmail 
                 }
-        }) ; 
+            }) ; 
 
-        if(!checkassigne){
-            return res.status(400).json({
-                success: false,
-                message: "no such assigne exits"
-    
-            })
-        }
-
-        const newTasks = await client.project_Tasks.create({
-            data : {
-                title : title ,
-                description : description,
-                status : status ,
-                project_id : projectId ,
-                assignee_email : assigneEmail , 
-                priority   : priority ,
-                startDate : startDate ,
-                dueDate : dueDate
+            if (!checkassigne) {
+                return res.status(400).json({
+                    success: false,
+                    message: `No such assignee exists: ${assigneEmail}`
+                });
             }
-        });
 
+            const newTasks = await client.project_Tasks.create({
+                data : {
+                    title : title ,
+                    description : description,
+                    status : status ,
+                    project_id : projectId ,
+                    assignee_email : assigneEmail , 
+                    priority   : priority ,
+                    startDate : startDate ,
+                    dueDate : dueDate , 
+                    project_task_creator_id : userId
+                }
+            });
+            
+
+            createdTasks.push(newTasks);
+
+
+        }
 
         return res.status(200).json({
             success : true ,
-            task : newTasks
+            tasks : createdTasks
         })
 
 
@@ -86,7 +103,7 @@ export const addTasks = async (req ,res) => {
         console.log(e);
         return res.status(500).json({
             success: false,
-            message: "error getting all project of the user"
+            message: "error adding tasks by user"
 
         })
     }
@@ -94,35 +111,56 @@ export const addTasks = async (req ,res) => {
 
 export const addSubTasks = async(req ,res)=>{
     try{
-            const taskId = req.params.taskId ; 
+        const userId = req.params.userId ; 
+            const {subtasks} = req.body ; 
 
-            const {title ,description ,status ,priority ,assigneEmail ,startDate ,dueDate} = req.body ; 
-
-            if(!title || !status || !priority || !assigneEmail || !startDate || !dueDate){
-                return res.status(500).json({
+            if(!Array.isArray(subtasks) || subtasks.length === 0){
+                return res.status(400).json({
                     success: false,
-                    message: "error : missing field"
+                    message: "tasks array is required"
         
                 })
+            } 
+
+            const createdSubtasks = [] ; 
+
+            for(const subtask of subtasks){
+
+                const { title, priority, startDate, dueDate, assigneEmail, status, description ,taskId } = subtask ;
+
+                if(!title || !status || !priority || !assigneEmail || !startDate || !dueDate || !taskId){
+                    return res.status(500).json({
+                        success: false,
+                        message: "error : missing field"
+            
+                    })
+                }
+
+                const addingsubtask = await client.project_SubTasks.create({
+                    data : {
+                        title : title ,
+                        description : description ,
+                        status : status ,
+                        priority : priority ,
+                        assignee_email : assigneEmail ,
+                        startDate : startDate ,
+                        dueDate : dueDate,
+                        project_Tasks_id : taskId ,
+                        project_sub_task_creator_id:userId
+                    }
+                }) ;
+
+                createdSubtasks.push(addingsubtask) ; 
             }
 
+            
 
-            const addingsubtask = await client.project_SubTasks.create({
-                data : {
-                    title : title ,
-                    description : description ,
-                    status : status ,
-                    priority : priority ,
-                    assignee_email : assigneEmail ,
-                    startDate : startDate ,
-                    dueDate : dueDate,
-                    project_Tasks_id : taskId
-                }
-            }) ;
+
+           
 
             return res.status(200).json({
                 success : true ,
-                subtasks : addingsubtask
+                subtasks : createdSubtasks
             })
 
 
@@ -132,6 +170,40 @@ export const addSubTasks = async(req ,res)=>{
         return res.status(500).json({
             success: false,
             message: "error getting all project subtasks"
+
+        })
+    }
+}
+
+export const getmycreatedTask = async(req ,res) => {
+    try{
+        const userId = req.params.userId ; 
+
+        if(!userId){
+            return res.status(500).json({
+                success: false,
+                message: "error getting userid"
+            })
+        }
+
+        const createdtasks = await client.project_Tasks.findMany({
+            where : {
+                project_task_creator_id : userId 
+            }
+        }) ; 
+
+        return res.status(200).json({
+            success : true ,
+            message : "my created tasks got successfully" , 
+            tasks : createdtasks 
+        })
+
+    }
+    catch(e){
+        console.log(e);
+        return res.status(500).json({
+            success: false,
+            message: "error getting all created tasks"
 
         })
     }
@@ -221,15 +293,17 @@ export const markSubTaskComplete = async(req ,res) => {
     }
 }
 
-export const getTaskoftheUser = async(req ,res) => {
+export const getTaskAssignedoftheUser = async(req ,res) => {
     try{
-        const userId = req.params.id ; 
-
+        const userId = req.params.userId; 
+        // console.log(userId) ; 
         const user = await client.user.findFirst({
             where : {
                 id : userId
             }
         }) ; 
+
+        // console.log(user.email)
 
         if(!user){
             console.log(e);
