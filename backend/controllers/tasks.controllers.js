@@ -175,6 +175,7 @@ export const addSubTasks = async(req ,res)=>{
                         assignee_email : assigneEmail ,
                         startDate : startDate ,
                         dueDate : dueDate,
+                        projectId : projectId ,
                         project_Tasks_id : taskId ,
                         project_sub_task_creator_id:userId
                     }
@@ -291,12 +292,18 @@ export const markTaskComplete = async(req ,res) => {
                 } 
             });
 
+            let completeTaskDate = task.createdAt
+            if(task.mark_complete === true){
+                completeTaskDate = new Date();
+            }
+
             const updatedtask = await client.project_Tasks.update({
                 where : {
                     id : taskId
                 } ,
                 data : {
-                    mark_complete : !task.mark_complete
+                    mark_complete : !task.mark_complete ,
+                    time_TaskCompletion : completeTaskDate
                 }
             });
 
@@ -337,6 +344,7 @@ export const markSubTaskComplete = async(req ,res) => {
                 }
             }) ; 
 
+
             const projectmember = await client.project_Members.findFirst({
                 where : {
                     projectId : projectId ,
@@ -368,12 +376,18 @@ export const markSubTaskComplete = async(req ,res) => {
                 }
             })
 
+            let completeTaskDate = subtask.createdAt
+            if(subtask.mark_complete === true){
+                completeTaskDate = new Date();
+            }
+
             const updatedtask = await client.project_SubTasks.update({
                 where : {
                     id : subtaskId
                 } ,
                 data : {
-                    mark_complete : !subtask.mark_complete
+                    mark_complete : !subtask.mark_complete,
+                    time_SubTaskCompletion : completeTaskDate
                 }
             });
 
@@ -668,6 +682,176 @@ export const editsubTasks = async(req ,res) => {
         return res.status(500).json({
             success: false,
             message: "error editing subtasks"
+
+        })
+    }
+}
+
+export const projectDashboard = async(req ,res) => {
+    try{
+            const userId = req.params.userId ; 
+            const projectId = req.params.projectId ; 
+
+            const projectTask = await client.project_Tasks.findMany({
+                where : {
+                    project_id : projectId
+                }
+            }) ; 
+
+            const projectSubTasks = await client.project_SubTasks.findMany({
+                where : {
+                    projectId : projectId
+                }
+            }) ;
+
+            const totalTask = projectTask.length + projectSubTasks.length ; 
+
+            const projectTaskMarkComplete = projectTask.filter((el) => {
+                return el.mark_complete === true
+            }) ; 
+
+            const projectSubTasksMarkComplete = projectSubTasks.filter((el) => {
+                return el.mark_complete === true 
+            })
+
+            const totalCompletedTask = projectTaskMarkComplete.length + projectSubTasksMarkComplete.length
+
+            const totalNotCompletedTask = totalTask - totalCompletedTask ;
+
+
+            let taskcompletionOvertime = [] ;
+            let countLowPriority = 0 ; 
+            let countHighPriority = 0 ;
+            let countMediumPriority = 0 ; 
+
+            let taskwithassignemail = [] ; 
+
+            let profileMap = {};
+
+            for (const el of projectTask) {
+               // if(el.mark_complete === true){
+                    taskcompletionOvertime.push({
+                        complete : el.mark_complete ,
+                        timeofcompletion : el.time_TaskCompletion
+                    })
+              //  }
+                if(el.priority === "High"){
+                    countHighPriority = countHighPriority + 1 ; 
+                }
+                if(el.priority === "Low"){
+                    countLowPriority = countLowPriority + 1 ; 
+                }
+                if(el.priority === "Medium"){
+                    countMediumPriority = countMediumPriority + 1 ; 
+                }
+
+                const user = await client.user.findUnique({
+                    where : {
+                        email : el.assignee_email
+                    }
+                })
+
+                if(!user){
+                    return res.status(400).json({
+                        success : false ,
+                        message : "user not found"
+                    })
+                }
+console.log(user.profile)
+
+profileMap[user.email] = user.profile;
+
+                taskwithassignemail.push({
+                    email : el.assignee_email ,
+                    complete : el.mark_complete,
+                    
+                    profile : user?.profile || null
+                })
+
+            }
+            
+
+            for (const el of projectSubTasks) {
+               // if(el.mark_complete === true){
+                    taskcompletionOvertime.push({
+                        complete : el.mark_complete ,
+                        timeofcompletion : el.time_SubTaskCompletion
+                    })
+                //}
+                if(el.priority === "High"){
+                    countHighPriority = countHighPriority + 1 ; 
+                }
+                if(el.priority === "Low"){
+                    countLowPriority = countLowPriority + 1 ; 
+                }
+                if(el.priority === "Medium"){
+                    countMediumPriority = countMediumPriority + 1 ; 
+                }
+                const user = await client.user.findUnique({
+                    where : {
+                        email : el.assignee_email
+                    }
+                })
+
+                //console.log(user) ; 
+
+                if(!user){
+                    return res.status(400).json({
+                        success : false ,
+                        message : "user not found"
+                    })
+                }
+
+                profileMap[user.email] = user.profile;
+
+
+                taskwithassignemail.push({
+                    email : el.assignee_email ,
+                    complete : el.mark_complete,
+                    profile : user?.profile || null
+                })
+            } ;
+
+
+            const countOfUncompletedTaskByAssigne = taskwithassignemail.reduce((acc, curr) => {
+                if (!acc[curr.email]) {
+                  acc[curr.email] = { email: curr.email, incompleteCount: 0,completeCount:0 };
+                }
+                if (curr.complete === false) {
+                  acc[curr.email].incompleteCount += 1;
+                }
+                if(curr.complete === true){
+                    acc[curr.email].completeCount += 1
+                }
+                return acc;
+              },[]) ; 
+
+              const counttaskWithAssignEmails = Object.values(countOfUncompletedTaskByAssigne);
+              
+
+            
+
+
+            return res.status(200).json({
+                success : true ,
+                //   projectTask : projectTask ,
+                //   projectSubTasks : projectSubTasks ,
+                totalTask : totalTask,
+                completedTask : totalCompletedTask ,
+                notcompletedTask : totalNotCompletedTask,
+                taskcompletion : taskcompletionOvertime ,
+                highPriority : countHighPriority ,
+                lowPriority : countLowPriority ,
+                mediumPriority : countMediumPriority,
+                counttaskWithAssignEmails : counttaskWithAssignEmails,
+                profile : profileMap
+            })
+    }
+    catch(e){
+        console.log(e);
+        return res.status(500).json({
+            success: false,
+            message: "error getting project daskhbord "
 
         })
     }

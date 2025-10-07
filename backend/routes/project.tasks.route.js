@@ -1,5 +1,5 @@
 import express from "express"; 
-import { addSubTasks, addTasks, editsubTasks, editTasks, getalltaskswiththeirsubtasks, getmycreatedTask, getTaskAssignedoftheUser, markSubTaskComplete, markTaskComplete } from "../controllers/tasks.controllers.js";
+import { addSubTasks, addTasks, editsubTasks, editTasks, getalltaskswiththeirsubtasks, getmycreatedTask, getTaskAssignedoftheUser, markSubTaskComplete, markTaskComplete, projectDashboard } from "../controllers/tasks.controllers.js";
 
 const router = express.Router()  ; 
 
@@ -18,6 +18,8 @@ router.patch('/:userId/project/:projectId/update/subtasks' ,editsubTasks) ;
 
 
 router.get('/:userId/project/get/myTasks' ,getTaskAssignedoftheUser) ; 
+
+router.get('/:userId/project/:projectId/dashboard/detail' ,projectDashboard) ;
 
 
 export default router ;

@@ -67,6 +67,7 @@ model Projects {
   tasks          Project_Tasks[]
   views          ProjectViews[]
   projectfiles ProjectFiles[]
+  subtasks Project_SubTasks[]
   createdAt      DateTime          @default(now())
 }
 
@@ -96,6 +97,7 @@ model Project_Tasks {
   relatedFiles   ProjectFiles[]
   project_task_creator_id String
   creator User @relation(fields: [project_task_creator_id] ,references: [id])
+  time_TaskCompletion DateTime @default(now())
   createdAt      DateTime           @default(now())
 }
 
@@ -110,9 +112,12 @@ model Project_SubTasks {
   assignee_email   String
   startDate        DateTime      @default(now())
   dueDate          DateTime      @default(now())
+  projectId String
+  project_id Projects @relation(fields: [projectId] ,references: [id])
   project_sub_task_creator_id String
   creator User @relation(fields: [project_sub_task_creator_id] ,references: [id])
   mark_complete    Boolean       @default(false)
+  time_SubTaskCompletion DateTime @default(now())
   createdAt        DateTime      @default(now())
 }
 
