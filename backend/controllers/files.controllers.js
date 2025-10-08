@@ -15,7 +15,7 @@ export const uploadfile = async (req, res) => {
             `data:${req.file.mimetype};base64,${req.file.buffer.toString('base64')}`,
             {
               folder: 'project_files',
-              resource_type: 'auto' // 👈 important: allow image, video, pdf, etc.
+              resource_type: 'auto' 
             }
           );
           const file = result.secure_url
@@ -55,16 +55,52 @@ export const uploadfile = async (req, res) => {
 export const getAllFilesOfProject = async(req ,res)=>{
     try{
         const projectId = req.params.projectId ; 
+        //const userId = req.params.userId ; 
         
         const files = await client.projectFiles.findMany({
             where:{
                 project_id : projectId 
             }
         }) ; 
+        const filesDetail = []
+        
+
+        for(const file of files){
+            const projectdetail = await client.projects.findFirst({
+                where : {
+                    id : files.project_id
+                }
+            }) ; 
+    
+            const userinfo = await client.user.findFirst({
+                where : {
+                    id : files.uploader_id
+                }
+            }) ;
+    
+            const taskinfo = await client.project_Tasks.findFirst({
+                where : {
+                    id : files.task_id
+                }
+            })
+
+            filesDetail.push({
+                id : file.id,
+                profile : file.file ,
+                projectname : projectdetail. projectName,
+                ownername : userinfo.fullname,
+                taskname : taskinfo.title
+            })
+        }
+
+        
+
+       
+
 
         return res.status(200).json({
             success : true ,
-            files : files 
+            files : filesDetail
         })
 
     }catch(e){

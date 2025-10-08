@@ -6,7 +6,7 @@ const router = express.Router() ;
 
 router.post('/:userId/project/:projectId/task/:taskId/file/upload' ,upload.single('image'),uploadfile); 
 
-router.get('/:userId/project/:projectId/task/:taskId/file/getAll' ,getAllFilesOfProject) ; 
+router.get('/:userId/project/:projectId/file/getAll' ,getAllFilesOfProject) ; 
 
 export default router ;
 

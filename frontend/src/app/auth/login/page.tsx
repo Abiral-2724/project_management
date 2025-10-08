@@ -1,18 +1,27 @@
 'use client'
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import Loader from '@/components/Loader';
 import axios from 'axios';
 import { toast } from 'react-toastify';
 import { useRouter } from 'next/navigation';
-
+import { jwtDecode } from "jwt-decode";
 export default function AsanaSignin() {
     const [loading ,setLoading] = useState(false); 
     const [email ,setEmail] = useState('') ; 
     const [password ,setPassword] = useState('') ; 
 
     const router = useRouter() ; 
+
+    useEffect(() => {
+        if(localStorage.getItem("token")){
+          const token : any = localStorage.getItem("token") ; 
+          const decoded : any = jwtDecode(token);
+         console.log("decode = " ,decoded) ; 
+         router.push(`/${decoded.id}/dashboard/home`)
+        }
+    } ,[])
 
     const handleSubmit = async(e:any) =>{
         e.preventDefault() ; 
