@@ -4,18 +4,18 @@ import { createNewProject, getAllMemberOfProject, getAllProjectsOfUser, getCompl
 
 const router = express.Router() ;
 
-router.post('/:userid/project/new/create' ,authMiddleware ,createNewProject) ;
-router.get('/:userid/allProject' ,authMiddleware ,getAllProjectsOfUser) ; 
-router.get('/:userId/project/:projectId/get' ,authMiddleware ,getProjectById) ; 
-router.get('/:userId/project/:projectId/get/members',authMiddleware ,getAllMemberOfProject) ; 
+router.post('/:userid/project/new/create'  ,createNewProject) ;
+router.get('/:userid/allProject' ,getAllProjectsOfUser) ; 
+router.get('/:userId/project/:projectId/get'  ,getProjectById) ; 
+router.get('/:userId/project/:projectId/get/members' ,getAllMemberOfProject) ; 
 
-router.post('/:userId/project/:projectId/addMember/sendInvite' ,authMiddleware ,sendingInviteToAddMemberToProject) ; 
+router.post('/:userId/project/:projectId/addMember/sendInvite'  ,sendingInviteToAddMemberToProject) ; 
 
-router.patch('/:userId/project/:projectId/update/role',authMiddleware ,updateRole) ; 
-router.get('/:userId/project/:projectId/get/views' ,authMiddleware,getViewsOfProject) ; 
+router.patch('/:userId/project/:projectId/update/role' ,updateRole) ; 
+router.get('/:userId/project/:projectId/get/views' ,getViewsOfProject) ; 
 
-router.get('/:userId/project/:projectId/get/project/Timeline' ,authMiddleware ,getProjectTimeline)
+router.get('/:userId/project/:projectId/get/project/Timeline'  ,getProjectTimeline)
 
-router.get('/:userId/project/:projectId/get/complete/projectDetails' ,authMiddleware ,getCompleteDetailOfProject) ; 
+router.get('/:userId/project/:projectId/get/complete/projectDetails'  ,getCompleteDetailOfProject) ; 
 
 export default router ; 

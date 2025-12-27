@@ -85,11 +85,19 @@ export const register = async (req ,res) => {
             } else {
                 console.log('Email send', info.response);
             }
-        })
+        }) 
+
+        const tokenData = {
+            id: user.id
+        }
+
+        const token = await jwt.sign(tokenData, process.env.SECERET_KEY, { expiresIn: '10h' }) ; 
+
         
         return res.status(200).json({
             message : "user register successfully" ,
-            user : user
+            user : user ,
+            token
         })
 
     }

@@ -22,7 +22,7 @@ export const createNewProject = async (req, res) => {
                     "Files",
                     "Messages",
                 ])
-            ).optional(),
+            ).default(["List"]),
         })
 
         const parse = reqBody.safeParse(req.body);
@@ -354,78 +354,78 @@ export const getCompleteDetailOfProject = async(req ,res) => {
     }
 }
 
-export const getProjectTimeline = async(req ,res) => {
-    try{
-        const userId = req.params.userId ; 
-        const projectId = req.params.projectId ;
-        if(!projectId){
-            return res.status(400).json({
-                success : false ,
-                message : "project id not found"
-            })
-        } 
-
-        if(!userId){
-            return res.status(400).json({
-                success : false ,
-                message : "user id not found"
-            })
-        }  
-
-        const projectTimeline = [] ; 
-
-        const projectDetail = await client.projects.findFirst({
-            where : {
-                id : projectId
-            }
-        }) ; 
-
-        projectTimeline.push({
-            Type : "Project created" ,
-            createdTime : projectDetail.createdAt
-        }) ; 
-
-        const projectMember = await client.project_Members.findMany({
-            where : {
-                projectId : projectId
-            }
-        }) ; 
-
-        for(const member of projectMember){
-            const userEmail = member.emailuser ; 
-
-            const userDetail = await client.user.findFirst({
-                where : {
-                    email : userEmail
-                }
-            })
-            projectTimeline.push({
-                Type : "Someone joined" ,
-                email : member.emailuser ,
-                createdTime : member.joinedAt,
-                profile : userDetail?.profile
-            })
+export const getProjectTimeline = async (req, res) => {
+    try {
+      const { userId, projectId } = req.params;
+  
+      if (!userId || !projectId) {
+        return res.status(400).json({
+          success: false,
+          message: "userId or projectId missing"
+        });
+      }
+  
+      const projectDetail = await client.projects.findFirst({
+        where: { id: projectId }
+      });
+  
+      if (!projectDetail) {
+        return res.status(404).json({
+          success: false,
+          message: "Project not found"
+        });
+      }
+  
+      const projectTimeline = [
+        {
+          Type: "Project created",
+          createdTime: projectDetail.createdAt
         }
-
-        projectTimeline.sort((a, b) => new Date(a.createdTime).getTime() - new Date(b.createdTime).getTime());
-
-
-        return res.status(200).json({
-            message : "project timeline extracted" ,
-            timeline : projectTimeline ,
-            
-        })
-
-    }catch(e){
-        console.log(e);
-        return res.status(500).json({
-            success: false,
-            message: "error getting project timeline"
-
-        })
+      ];
+  
+      const projectMembers = await client.project_Members.findMany({
+        where: { projectId }
+      });
+  
+      const emails = projectMembers.map(m => m.emailuser);
+  
+      const users = await client.user.findMany({
+        where: { email: { in: emails } }
+      });
+  
+      const userMap = new Map(users.map(u => [u.email, u.profile]));
+  
+      for (const member of projectMembers) {
+        if (!member.joinedAt) continue;
+  
+        projectTimeline.push({
+          Type: "Someone joined",
+          email: member.emailuser,
+          createdTime: member.joinedAt,
+          profile: userMap.get(member.emailuser) || null
+        });
+      }
+  
+      projectTimeline.sort(
+        (a, b) =>
+          new Date(a.createdTime).getTime() -
+          new Date(b.createdTime).getTime()
+      );
+  
+      return res.status(200).json({
+        message: "project timeline extracted",
+        timeline: projectTimeline
+      });
+  
+    } catch (e) {
+      console.error(e);
+      return res.status(500).json({
+        success: false,
+        message: "error getting project timeline"
+      });
     }
-}
-
+  };
+  
 const getProjectMemberWithTheirdetail = async(req ,res) => {
     try{    
 
