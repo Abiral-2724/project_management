@@ -2,10 +2,10 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
-import { useProjects } from "@/context/ProjectContext";
+import { useProjects } from ".././context/ProjectContext";
 import { SocketProvider } from "@/context/SocketContext";
-import Sidebar from "./Sidebar";
-import Topbar from "./Topbar";
+import Sidebar from "../components/layout/Sidebar";
+import Topbar from "../components/layout/Topbar";
 import SearchOverlay from "@/components/search/SearchOverlay";
 import { ToastContainer, Spinner } from "@/components/ui";
 
