@@ -1,4 +1,5 @@
 "use client";
+export const dynamic = "force-dynamic";
 import { useState, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { api } from "@/lib/api";
@@ -7,10 +8,10 @@ import { Icon, Button, Input, Select, showToast } from "@/components/ui";
 
 const ROLES = ["Team_member","Manager","Director","Executive","Business_owner","Freelancer","Student","Other","Prefer_not_to_say"];
 
-export default function SetupPage() {
+export default function SetupPage({ searchParams }) {
   const router = useRouter();
-  const params = useSearchParams();
-  const id = params.get("id");
+  //const params = useSearchParams();
+  const id = searchParams?.id;
   const { refreshUser } = useAuth();
   const fileRef = useRef(null);
   const [fullname, setFullname] = useState("");

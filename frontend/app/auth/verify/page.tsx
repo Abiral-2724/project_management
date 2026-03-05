@@ -1,13 +1,15 @@
 "use client";
+export const dynamic = "force-dynamic";
 import { useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { api } from "@/lib/api";
 import { Icon, Button, showToast } from "@/components/ui";
 
-export default function VerifyPage() {
+export default function VerifyPage({searchParams}) {
   const router = useRouter();
-  const params = useSearchParams();
-  const id = params.get("id");
+ // const params = useSearchParams();
+  const id = searchParams?.id;
+  //const id = params.get("id");
   const [otp, setOtp] = useState(["","","","","",""]);
   const [loading, setLoading] = useState(false);
   const [resending, setResending] = useState(false);
