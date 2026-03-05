@@ -1,662 +1,504 @@
-import { PrismaClient } from "@prisma/client";
-import { z } from 'zod';
-import nodemailer from 'nodemailer' ;
-const client = new PrismaClient();
+import client from "../prisma.js";
+import { z } from "zod";
+import nodemailer from "nodemailer";
+import { io } from "../index.js";
+import { createActivityLog } from "./activity.controllers.js";
 
+// ─── NOTIFICATION HELPER ──────────────────────────────────────────────────────
+async function pushNotification({ userId, type, message, projectId = null, taskId = null }) {
+  try {
+    const notif = await client.notification.create({
+      data: { user_id: userId, type, message, project_id: projectId, task_id: taskId },
+    });
+    io?.to(`user:${userId}`).emit("new_notification", notif);
+  } catch (e) {
+    console.warn("pushNotification failed:", e.message);
+  }
+}
+
+// Notify every member of a project (optionally skip one userId)
+async function notifyProjectMembers({ projectId, type, message, skipUserId = null }) {
+  try {
+    const members = await client.project_Members.findMany({ where: { projectId } });
+    for (const m of members) {
+      const user = await client.user.findFirst({ where: { email: m.emailuser } });
+      if (!user || user.id === skipUserId) continue;
+      await pushNotification({ userId: user.id, type, message, projectId });
+    }
+  } catch (e) {
+    console.warn("notifyProjectMembers failed:", e.message);
+  }
+}
+
+// ─── EMAIL TRANSPORTER ────────────────────────────────────────────────────────
+const transporter = nodemailer.createTransport({
+  service: "gmail",
+  auth: {
+    user: process.env.EMAIL_USER,
+    pass: process.env.EMAIL_PASS,
+  },
+});
+
+// ─── CREATE PROJECT ──────────────────────────────────────────────────────────
 export const createNewProject = async (req, res) => {
-    try {
-        const reqBody = z.object({
-            projectName: z.string().min(2).max(100),
-            description: z.string().min(10).max(200),
-            views: z.array(
-                z.enum([
-                    "Overview",
-                    "Board",
-                    "List",
-                    "Timeline",
-                    "Dashboard",
-                    "Gantt",
-                    "Calendar",
-                    "Note",
-                    "Workload",
-                    "Files",
-                    "Messages",
-                ])
-            ).default(["List"]),
-        })
+  try {
+    const reqBody = z.object({
+      projectName: z.string().min(2).max(100),
+      description: z.string().min(2).max(500),
+      views: z
+        .array(
+          z.enum([
+            "Overview","Board","List","Timeline","Dashboard",
+            "Gantt","Calendar","Note","Workload","Files","Messages",
+          ])
+        )
+        .default(["List"]),
+    });
 
-        const parse = reqBody.safeParse(req.body);
-
-        if (!parse.success) {
-            return res.status(400).json({
-                message: 'Zod validation failed',
-                error: parse.error.issues
-            })
-        }
-
-        const { projectName, description, views = [] } = req.body;
-
-
-
-        const userid = req.params.userid;
-
-        const user = await client.user.findFirst({
-            where : {
-                id : userid 
-            }
-        })
-
-        if (!projectName || !description) {
-            return res.status(400).json({
-                success: false,
-                message: "all fields are required"
-            })
-        }
-
-        const oldProject = await client.projects.findFirst({
-            where: {
-                ownerId: userid,
-                projectName: projectName
-            }
-        })
-
-        if (oldProject) {
-            return res.status(400).json({
-                success: false,
-                message: "A project with this name already exits choose another name and try again !"
-            })
-        }
-
-
-        const project = await client.projects.create({
-            data: {
-                projectName: projectName,
-                description: description,
-                ownerId: userid
-            }
-        });
-
-        const projectMember = await client.project_Members.create({
-            data:{
-                projectId : project.id , 
-                role:   "OWNER",
-                emailuser : user.email
-            }
-        })
-
-        const viewData = {
-            project_id: project.id,
-            Overview: views.includes("Overview"),
-            Board: views.includes("Board"),
-            Timeline: views.includes("Timeline"),
-            Dashboard: views.includes("Dashboard"),
-            Gantt: views.includes("Gantt"),
-            Calendar: views.includes("Calendar"),
-            Note: views.includes("Note"),
-            Workload: views.includes("Workload"),
-            Files: views.includes("Files"),
-            Messages: views.includes("Messages"),
-        }
-
-        const updatedViews = await client.projectViews.create({
-            data: viewData
-        });
-
-        return res.status(200).json({
-            success: true,
-            project: project,
-            views: updatedViews
-        })
+    const parse = reqBody.safeParse(req.body);
+    if (!parse.success) {
+      return res.status(400).json({ success: false, message: "Validation failed", error: parse.error.issues });
     }
-    catch (e) {
-        console.log(e);
-        return res.status(500).json({
-            success: false,
-            message: "error creating project , try again later"
 
-        })
+    const { projectName, description, views = [] } = req.body;
+    const userid = req.params.userid;
+
+    const user = await client.user.findFirst({ where: { id: userid } });
+    if (!user) return res.status(404).json({ success: false, message: "User not found" });
+
+    const oldProject = await client.projects.findFirst({
+      where: { ownerId: userid, projectName },
+    });
+    if (oldProject) {
+      return res.status(409).json({ success: false, message: "You already have a project with this name" });
     }
-} 
 
-export const getAllProjectsOfUser = async(req ,res) => {
-    try{
-        const userid = req.params.userid ; 
+    const project = await client.projects.create({
+      data: { projectName, description, ownerId: userid },
+    });
 
-        if(!userid){
-            return res.status(400).json({
-                success : false ,
-                message : "user id not found"
-            })
-        }
+    // Add owner as OWNER member
+    await client.project_Members.create({
+      data: { projectId: project.id, role: "OWNER", emailuser: user.email },
+    });
 
-        const user = await client.user.findFirst({
-            where : {
-                id : userid
-            }
-        })
+    // Create project views
+    const updatedViews = await client.projectViews.create({
+      data: {
+        project_id: project.id,
+        Overview:  views.includes("Overview"),
+        Board:     views.includes("Board"),
+        List:      views.includes("List") || views.length === 0, // default List on
+        Timeline:  views.includes("Timeline"),
+        Dashboard: views.includes("Dashboard"),
+        Gantt:     views.includes("Gantt"),
+        Calendar:  views.includes("Calendar"),
+        Note:      views.includes("Note"),
+        Workload:  views.includes("Workload"),
+        Files:     views.includes("Files"),
+        Messages:  views.includes("Messages"),
+      },
+    });
 
-        const projectsToWhichUserIsMember = await client.project_Members.findMany({
-            where:{
-                emailuser : user.email
-            }
-        }) ; 
+    await createActivityLog({ userId: userid, projectId: project.id, action: "PROJECT_CREATED", meta: { projectName } });
 
-        const memberprojectdetail = [] ; 
-        projectsToWhichUserIsMember.map(async (project) => {
-            const id = project.projectId ; 
-            const projectdetail = await client.projects.findFirst({
-                where:{
-                    id : id,
-                    
-                }
-            }) ; 
-            if(projectdetail.ownerId !== userid){
-            memberprojectdetail.push(projectdetail)
-            }
-        })
+    return res.status(201).json({ success: true, project, views: updatedViews });
+  } catch (e) {
+    console.error("createNewProject:", e);
+    return res.status(500).json({ success: false, message: "Error creating project" });
+  }
+};
 
-        const projectsToWhichUserIsOwner = await client.projects.findMany({
-            where:{
-                ownerId : userid
-            }
-        }) ; 
+// ─── GET ALL PROJECTS OF USER ─────────────────────────────────────────────────
+// BUG FIX: original used async inside .map() which doesn't await — replaced with for...of
+export const getAllProjectsOfUser = async (req, res) => {
+  try {
+    const userid = req.params.userid;
+    if (!userid) return res.status(400).json({ success: false, message: "User ID required" });
 
-        return res.status(200).json({
-            success : true ,
-            MemberProject : memberprojectdetail , 
-            OwnerProject : projectsToWhichUserIsOwner
-        })
+    const user = await client.user.findFirst({ where: { id: userid } });
+    if (!user) return res.status(404).json({ success: false, message: "User not found" });
 
-    }catch(e){
-        console.log(e);
-        return res.status(500).json({
-            success: false,
-            message: "error getting all the projects of the user"
+    // Projects user OWNS
+    const OwnerProject = await client.projects.findMany({
+      where: { ownerId: userid },
+      orderBy: { createdAt: "desc" },
+    });
 
-        }) ; 
+    // Projects user is a MEMBER of (but doesn't own)
+    const memberships = await client.project_Members.findMany({
+      where: { emailuser: user.email },
+    });
+
+    // Filter out owned projects and fetch details
+    const MemberProject = [];
+    for (const m of memberships) {
+      if (OwnerProject.find((p) => p.id === m.projectId)) continue; // skip owned
+      const proj = await client.projects.findFirst({ where: { id: m.projectId } });
+      if (proj) MemberProject.push(proj);
     }
-} 
 
-export const getProjectById = async(req ,res) => {
-    try{
-        const projectId = req.params.projectId ; 
+    return res.status(200).json({ success: true, OwnerProject, MemberProject });
+  } catch (e) {
+    console.error("getAllProjectsOfUser:", e);
+    return res.status(500).json({ success: false, message: "Error fetching projects" });
+  }
+};
 
-        if(!projectId){
-            return res.status(400).json({
-                success : false ,
-                message : "project id not found"
-            })
-        }
+// ─── GET PROJECT BY ID ────────────────────────────────────────────────────────
+export const getProjectById = async (req, res) => {
+  try {
+    const { projectId } = req.params;
+    const project = await client.projects.findFirst({ where: { id: projectId } });
+    if (!project) return res.status(404).json({ success: false, message: "Project not found" });
+    return res.status(200).json({ success: true, project });
+  } catch (e) {
+    console.error("getProjectById:", e);
+    return res.status(500).json({ success: false, message: "Error fetching project" });
+  }
+};
 
-        const project = await client.projects.findFirst({
-            where:{
-                id : projectId
-            }
-        }) 
+// ─── GET ALL MEMBERS ──────────────────────────────────────────────────────────
+export const getAllMemberOfProject = async (req, res) => {
+  try {
+    const { projectId } = req.params;
+    const members = await client.project_Members.findMany({ where: { projectId } });
+    return res.status(200).json({ success: true, member: members });
+  } catch (e) {
+    console.error("getAllMemberOfProject:", e);
+    return res.status(500).json({ success: false, message: "Error fetching members" });
+  }
+};
 
-        return res.status(200).json({
-            success : true ,
-            project : project
-        })
+// ─── GET VIEWS ────────────────────────────────────────────────────────────────
+export const getViewsOfProject = async (req, res) => {
+  try {
+    const { projectId } = req.params;
+    const views = await client.projectViews.findFirst({ where: { project_id: projectId } });
+    return res.status(200).json({ success: true, views });
+  } catch (e) {
+    console.error("getViewsOfProject:", e);
+    return res.status(500).json({ success: false, message: "Error fetching views" });
+  }
+};
 
-    }
-    catch(e){
-        console.log(e);
-        return res.status(500).json({
-            success: false,
-            message: "error getting project by id"
+// ─── GET COMPLETE PROJECT DETAIL ──────────────────────────────────────────────
+export const getCompleteDetailOfProject = async (req, res) => {
+  try {
+    const { userId, projectId } = req.params;
 
-        })
-    }
-}
+    const projectDetail = await client.projects.findFirst({ where: { id: projectId } });
+    if (!projectDetail) return res.status(404).json({ success: false, message: "Project not found" });
 
-export const getAllMemberOfProject = async(req ,res) => {
-    try{
-        const projectId = req.params.projectId ; 
+    const members = await client.project_Members.findMany({ where: { projectId } });
 
-        if(!projectId){
-            return res.status(400).json({
-                success : false ,
-                message : "project id not found"
-            })
-        }
-
-        const member = await client.project_Members.findMany({
-            where : {
-                projectId : projectId
-            }
-        }) ; 
-
-        return res.status(200).json({
-            success : true ,
-            member : member
-        })
-    }
-    catch(e){
-        console.log(e);
-        return res.status(500).json({
-            success: false,
-            message: "error getting all the project member"
-
-        })
-    }
-    
-}
-
-export const getViewsOfProject = async(req ,res) => {
-    try{
-        const projectId = req.params.projectId ; 
-
-        if(!projectId){
-            return res.status(400).json({
-                success : false ,
-                message : "project id not found"
-            })
-        } 
-
-        const views = await client.projectViews.findFirst({
-            where : {
-                project_id : projectId
-            }
-        }) ; 
-
-        return res.status(200).json({
-            message : true ,
-            views : views
-        })
-    }
-    catch(e){
-        console.log(e);
-        return res.status(500).json({
-            success: false,
-            message: "error getting all views of the project"
-
-        })
-    }
-}
-
-
-export const getCompleteDetailOfProject = async(req ,res) => {
-    try{
-            const userId = req.params.userId ; 
-            const projectId = req.params.projectId ;
-            if(!projectId){
-                return res.status(400).json({
-                    success : false ,
-                    message : "project id not found"
-                })
-            } 
-
-            if(!userId){
-                return res.status(400).json({
-                    success : false ,
-                    message : "user id not found"
-                })
-            }  
-
-
-            const projectDetail = await client.projects.findFirst({
-                where : {
-                    id : projectId
-                }
-            }) ; 
-
-            const member = await client.project_Members.findMany({
-                where : {
-                    projectId : projectId
-                }
-            }) ; 
-
-            const memberDetails = [] ; 
-
-            for(const user of member){
-                const email = user.emailuser ; 
-
-                const userdetail = await client.user.findFirst({
-                    where : {
-                        email :email
-                    }
-                }) ; 
-                memberDetails.push({
-                    "id": user.id ,
-                    "projectId": user.projectId,
-                    "role": user.role,
-                    "emailuser": user.emailuser,
-                    "joinedAt": user.joinedAt ,
-                    "profile" : userdetail?.profile ,
-                    "fullname" : userdetail?.fullname
-                })
-            }
-
-            const views = await client.projectViews.findFirst({
-                where : {
-                    project_id : projectId
-                }
-            }) ;
-
-
-            return res.status(200).json({
-                message : true ,
-                projectDetail : projectDetail ,
-                projectMember : memberDetails ,
-                projectViews : views
-            })
-
-
-
-    }catch(e){
-        console.log(e);
-        return res.status(500).json({
-            success: false,
-            message: "error getting all detail of the project "
-
-        })
-    }
-}
-
-export const getProjectTimeline = async (req, res) => {
-    try {
-      const { userId, projectId } = req.params;
-  
-      if (!userId || !projectId) {
-        return res.status(400).json({
-          success: false,
-          message: "userId or projectId missing"
-        });
-      }
-  
-      const projectDetail = await client.projects.findFirst({
-        where: { id: projectId }
-      });
-  
-      if (!projectDetail) {
-        return res.status(404).json({
-          success: false,
-          message: "Project not found"
-        });
-      }
-  
-      const projectTimeline = [
-        {
-          Type: "Project created",
-          createdTime: projectDetail.createdAt
-        }
-      ];
-  
-      const projectMembers = await client.project_Members.findMany({
-        where: { projectId }
-      });
-  
-      const emails = projectMembers.map(m => m.emailuser);
-  
-      const users = await client.user.findMany({
-        where: { email: { in: emails } }
-      });
-  
-      const userMap = new Map(users.map(u => [u.email, u.profile]));
-  
-      for (const member of projectMembers) {
-        if (!member.joinedAt) continue;
-  
-        projectTimeline.push({
-          Type: "Someone joined",
-          email: member.emailuser,
-          createdTime: member.joinedAt,
-          profile: userMap.get(member.emailuser) || null
-        });
-      }
-  
-      projectTimeline.sort(
-        (a, b) =>
-          new Date(a.createdTime).getTime() -
-          new Date(b.createdTime).getTime()
-      );
-  
-      return res.status(200).json({
-        message: "project timeline extracted",
-        timeline: projectTimeline
-      });
-  
-    } catch (e) {
-      console.error(e);
-      return res.status(500).json({
-        success: false,
-        message: "error getting project timeline"
-      });
-    }
-  };
-  
-const getProjectMemberWithTheirdetail = async(req ,res) => {
-    try{    
-
-    }catch(e){
-        console.log(e);
-        return res.status(500).json({
-            success: false,
-            message: "error getting project member with their detail"
-
-        })
-    }
-}
-
-
-export const sendingInviteToAddMemberToProject = async (req ,res) => {
-    try{
-        const userid = req.params.userId ; 
-        const projectid = req.params.projectId ; 
-
+    // Enrich members with user details
+    const projectMember = await Promise.all(
+      members.map(async (m) => {
         const userDetail = await client.user.findFirst({
-            where :{
-                id : userid
-            }
-        }) ; 
-
-        const doesProjectExits = await client.projects.findFirst({
-            where : {
-                id : projectid 
-            }
-        })
-        if(!doesProjectExits){
-            return res.status(400).json({
-                success : false ,
-                message : "project does not exits"
-            })
-        }
-
-        const checkRoleOfCurrentUser = await client.project_Members.findFirst({
-            where : {
-                projectId : projectid , 
-                emailuser : userDetail.email
-            }
-        }) ; 
-
-
-        console.log(checkRoleOfCurrentUser)
-
-        if(!checkRoleOfCurrentUser || (checkRoleOfCurrentUser.role !== "OWNER" && checkRoleOfCurrentUser.role !== "ADMIN")){
-            return res.status(400).json({
-                success : false ,
-                message : "you have no right to add member to the project"
-            })
-        } 
-
-        const {inviteEmail ,role} = req.body ; 
-
-        if(inviteEmail.length === 0){
-            return res.status(400).json({
-                 success : false ,
-                message : "error finding inviteEmail"
-            })
-        }
-
-        if(!role){
-            return res.status(400).json({
-                 success : false ,
-                message : "error finding role"
-            })
-        }
-
-        
-
-        const projectDetail = await client.projects.findFirst({
-            where:{
-                id : projectid
-            }
-        })
-
-        let transporter = nodemailer.createTransport({
-            service: 'gmail',
-            auth: {
-                user: process.env.EMAIL,
-                pass: process.env.EMAIL_PASSWORD
-            }
+          where: { email: m.emailuser },
+          select: { fullname: true, profile: true, email: true },
         });
-
-        for(const email of inviteEmail){
-            const isUserExits = await client.project_Members.findFirst({
-                where : {
-                    projectId : projectid , 
-                    emailuser : email 
-                }
-            }) ;
-            // console.log(isUserExits) ;
-            if(isUserExits){
-                return res.status(400).json({
-                    success : false ,
-                    message : `user with email ${email} already added to the project`
-                })
-            }
-        }
-
-        for(const email of inviteEmail) {
-
-           
-            const addmembertomembertable = await client.project_Members.create({
-                data:{
-                    projectId : projectid , 
-                    role : role ,
-                    emailuser : email
-                }
-            })
-            
-            let mailOptions = {
-                from: process.env.EMAIL,
-                to: email,
-                subject: `Action Required: ${userDetail.fullname} invited you to a project: ${projectDetail
-                    .projectName
-                }`,
-                text: `Hi, ${userDetail.fullname} invited you to join the project "${projectDetail.projectName}".`,
-                html: `
-                <div style="font-family: Arial, sans-serif; max-width: 500px; margin: auto; background: #fff; border-radius: 8px; padding: 20px; box-shadow: 0 2px 6px rgba(0,0,0,0.1); text-align: center;">
-                  <div style="margin-bottom: 16px;">
-                    <img src="https://seeklogo.com/images/A/asana-logo-64D88F2F44-seeklogo.com.png" alt="Logo" height="32" />
-                  </div>
-                  
-                  <div style="width: 48px; height: 48px; border-radius: 50%; background: #a3d3e7; display: inline-flex; align-items: center; justify-content: center; font-weight: bold; font-size: 18px; margin-bottom: 12px;">
-                    ${userDetail.fullname[0].toUpperCase()}
-                  </div>
-                  
-                  <p><strong>${userDetail.fullname}</strong> shared project <strong>${projectDetail.projectName}</strong> with you</p>
-                  <p style="color: #666; font-size: 13px;">Workspace: ${projectDetail.workspaceName || "My Workspace"}</p>
-                  
-                  <a href="https://your-app.com/login" style="display:inline-block; padding:12px 24px; background:#4a67d8; color:#fff; font-weight:bold; border-radius:6px; text-decoration:none; margin:20px 0;">Accept invite</a>
-                  
-                  <div style="border: 1px solid #ddd; border-radius: 6px; padding: 12px; text-align: left; margin-top: 12px;">
-                    <div style="font-weight: bold; margin-bottom: 4px;">${projectDetail.projectName}</div>
-                    <div style="font-size: 13px; color: #666;">${userDetail.fullname} and others</div>
-                  </div>
-                </div>
-                `,
-               
-            };
-
-
-            await transporter.sendMail(mailOptions, (error, info) => {
-                if (error) {
-                    console.log(error);
-                    return res.status(400).json({
-                        success: false,
-                        message: "Error sending email"
-                    });
-                } else {
-                    console.log('Email send', info.response);
-                }
-            })
-
-
+        return {
+          id: m.id,
+          projectId: m.projectId,
+          role: m.role,
+          emailuser: m.emailuser,
+          joinedAt: m.joinedAt,
+          fullname: userDetail?.fullname || m.emailuser,
+          profile: userDetail?.profile || null,
         };
-        
+      })
+    );
 
-        
-        return res.status(200).json({
-            success : true ,
-            message : "Invite send successfully"
-        })
-        
+    const projectViews = await client.projectViews.findFirst({ where: { project_id: projectId } });
 
+    // Current user's role in project
+    const currentUser = await client.user.findFirst({ where: { id: userId } });
+    const currentMember = members.find((m) => m.emailuser === currentUser?.email);
+    const userRole = currentMember?.role || "VIEWER";
 
+    return res.status(200).json({
+      success: true,
+      projectDetail,
+      projectMember,
+      projectViews,
+      userRole,
+    });
+  } catch (e) {
+    console.error("getCompleteDetailOfProject:", e);
+    return res.status(500).json({ success: false, message: "Error fetching project detail" });
+  }
+};
+
+// ─── GET TIMELINE ─────────────────────────────────────────────────────────────
+export const getProjectTimeline = async (req, res) => {
+  try {
+    const { userId, projectId } = req.params;
+
+    const projectDetail = await client.projects.findFirst({ where: { id: projectId } });
+    if (!projectDetail) return res.status(404).json({ success: false, message: "Project not found" });
+
+    const projectMembers = await client.project_Members.findMany({ where: { projectId } });
+    const emails = projectMembers.map((m) => m.emailuser);
+    const users = await client.user.findMany({ where: { email: { in: emails } } });
+    const userMap = new Map(users.map((u) => [u.email, u]));
+
+    const timeline = [
+      { type: "Project created", createdTime: projectDetail.createdAt },
+      ...projectMembers
+        .filter((m) => m.joinedAt)
+        .map((m) => ({
+          type: "Member joined",
+          email: m.emailuser,
+          role: m.role,
+          createdTime: m.joinedAt,
+          fullname: userMap.get(m.emailuser)?.fullname || m.emailuser,
+          profile: userMap.get(m.emailuser)?.profile || null,
+        })),
+    ].sort((a, b) => new Date(a.createdTime) - new Date(b.createdTime));
+
+    return res.status(200).json({ success: true, timeline });
+  } catch (e) {
+    console.error("getProjectTimeline:", e);
+    return res.status(500).json({ success: false, message: "Error fetching timeline" });
+  }
+};
+
+// ─── INVITE MEMBER ────────────────────────────────────────────────────────────
+export const sendingInviteToAddMemberToProject = async (req, res) => {
+  try {
+    const { userId, projectId } = req.params;
+    const { inviteEmail, role } = req.body;
+
+    // Validate inputs
+    if (!inviteEmail || !Array.isArray(inviteEmail) || inviteEmail.length === 0) {
+      return res.status(400).json({ success: false, message: "inviteEmail array is required" });
     }
-    catch(e){
-        console.log(e);
-        return res.status(500).json({
-            success: false,
-            message: "error adding memeber to the project"
-
-        })
+    if (!role) {
+      return res.status(400).json({ success: false, message: "role is required" });
     }
-}
 
+    const inviter = await client.user.findFirst({ where: { id: userId } });
+    if (!inviter) return res.status(404).json({ success: false, message: "Inviter not found" });
 
-export const updateRole = async(req ,res) => {
-    try{
-            const projectid = req.params.projectId ; 
-            const {email ,newRole} = req.body ; 
+    const project = await client.projects.findFirst({ where: { id: projectId } });
+    if (!project) return res.status(404).json({ success: false, message: "Project not found" });
 
-            if(!email || !newRole){
-                return res.status(400).json({
-                    success: false,
-                    message: "missing fields"
-        
-                })
-            }
-
-            const findUser = await client.project_Members.findFirst({
-                where : {
-                    emailuser : email
-                }
-            }) ; 
-
-            if(!findUser){
-                return res.status(400).json({
-                    success: false,
-                    message: `the user with email : ${email} has no access to project`
-        
-                })
-            }
-
-            const updateRole = await client.project_Members.updateMany({
-                where:{
-                    projectId : projectid , 
-                    emailuser : email
-                } ,
-                data : {
-                    role : newRole 
-                }
-            }) ;
-
-            
-
-            return res.status(200).json({
-                success : true ,
-                updateRole : updateRole
-            })
-
-    }catch(e){
-        console.log(e);
-        return res.status(500).json({
-            success: false,
-            message: "error changing role of user"
-
-        })
+    // Check inviter has permission
+    const inviterMembership = await client.project_Members.findFirst({
+      where: { projectId, emailuser: inviter.email },
+    });
+    if (!inviterMembership || !["OWNER", "ADMIN"].includes(inviterMembership.role)) {
+      return res.status(403).json({ success: false, message: "Only OWNER or ADMIN can invite members" });
     }
-}
+
+    // Check for duplicates before doing anything
+    for (const email of inviteEmail) {
+      const already = await client.project_Members.findFirst({
+        where: { projectId, emailuser: email.toLowerCase() },
+      });
+      if (already) {
+        return res.status(409).json({ success: false, message: `${email} is already a member of this project` });
+      }
+    }
+
+    const added = [];
+
+    for (const email of inviteEmail) {
+      const normalizedEmail = email.toLowerCase().trim();
+
+      // Add to project_Members
+      const member = await client.project_Members.create({
+        data: { projectId, role, emailuser: normalizedEmail },
+      });
+      added.push(member);
+
+      // Send invite email
+      try {
+        await transporter.sendMail({
+          from: `"Nexus" <${process.env.EMAIL_USER}>`,
+          to: normalizedEmail,
+          subject: `${inviter.fullname} invited you to ${project.projectName} on Nexus`,
+          html: `
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="margin:0;padding:0;background:#09090b;font-family:'Segoe UI',system-ui,sans-serif">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#09090b;padding:40px 20px">
+    <tr><td align="center">
+      <table width="480" cellpadding="0" cellspacing="0" style="background:#09090b;border:1px solid #27272a;border-radius:16px;overflow:hidden">
+
+        <!-- Header -->
+        <tr>
+          <td style="padding:28px 32px 24px;border-bottom:1px solid #18181b">
+            <table cellpadding="0" cellspacing="0">
+              <tr>
+                <td>
+                  <div style="width:32px;height:32px;background:#6366f1;border-radius:8px;display:inline-block;text-align:center;line-height:32px;font-size:16px">⚡</div>
+                </td>
+                <td style="padding-left:10px;vertical-align:middle">
+                  <span style="color:#ffffff;font-size:18px;font-weight:700;letter-spacing:-0.3px">Nexus</span>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+
+        <!-- Inviter avatar + message -->
+        <tr>
+          <td style="padding:32px 32px 0">
+            <table cellpadding="0" cellspacing="0">
+              <tr>
+                <td>
+                  <div style="width:48px;height:48px;background:linear-gradient(135deg,#6366f1,#8b5cf6);border-radius:50%;text-align:center;line-height:48px;font-size:20px;font-weight:700;color:#fff;display:inline-block">
+                    ${(inviter.fullname || inviter.email)[0].toUpperCase()}
+                  </div>
+                </td>
+                <td style="padding-left:14px;vertical-align:middle">
+                  <p style="margin:0;color:#a1a1aa;font-size:13px">Invitation from</p>
+                  <p style="margin:2px 0 0;color:#ffffff;font-size:15px;font-weight:600">${inviter.fullname || inviter.email}</p>
+                </td>
+              </tr>
+            </table>
+
+            <h1 style="margin:24px 0 8px;color:#fafafa;font-size:22px;font-weight:700;line-height:1.3">
+              You've been invited to join a project
+            </h1>
+            <p style="margin:0 0 24px;color:#71717a;font-size:14px;line-height:1.6">
+              <strong style="color:#a1a1aa">${inviter.fullname || inviter.email}</strong> has invited you to collaborate on <strong style="color:#a1a1aa">${project.projectName}</strong> with the role of <span style="color:#6366f1;font-weight:600">${role}</span>.
+            </p>
+          </td>
+        </tr>
+
+        <!-- Project card -->
+        <tr>
+          <td style="padding:0 32px 28px">
+            <div style="background:#18181b;border:1px solid #27272a;border-radius:12px;padding:20px">
+              <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px">
+                <div style="width:36px;height:36px;background:#6366f122;border:1px solid #6366f133;border-radius:8px;text-align:center;line-height:36px;font-size:15px;font-weight:700;color:#6366f1">
+                  ${project.projectName[0].toUpperCase()}
+                </div>
+                <div>
+                  <p style="margin:0;color:#fafafa;font-size:15px;font-weight:600">${project.projectName}</p>
+                  <p style="margin:2px 0 0;color:#71717a;font-size:12px">${project.description || "No description"}</p>
+                </div>
+              </div>
+              <p style="margin:12px 0 0;color:#52525b;font-size:12px;border-top:1px solid #27272a;padding-top:12px">
+                Your role: <span style="color:#6366f1;font-weight:600">${role}</span>
+              </p>
+            </div>
+          </td>
+        </tr>
+
+        <!-- CTA button -->
+        <tr>
+          <td style="padding:0 32px 32px;text-align:center">
+            <a href="${process.env.CLIENT_URL || "http://localhost:3000"}/auth/login"
+               style="display:inline-block;background:#6366f1;color:#ffffff;font-size:14px;font-weight:600;padding:13px 28px;border-radius:10px;text-decoration:none;letter-spacing:0.2px">
+              Accept Invitation →
+            </a>
+            <p style="margin:16px 0 0;color:#52525b;font-size:12px">
+              Log in with <strong style="color:#71717a">${normalizedEmail}</strong> to access the project.
+            </p>
+          </td>
+        </tr>
+
+        <!-- Footer -->
+        <tr>
+          <td style="padding:20px 32px;border-top:1px solid #18181b">
+            <p style="margin:0;color:#3f3f46;font-size:11px;text-align:center">
+              You received this because you were invited to Nexus. If you weren't expecting this, you can ignore it.
+            </p>
+          </td>
+        </tr>
+
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>
+          `,
+        });
+      } catch (mailErr) {
+        console.warn(`Email to ${normalizedEmail} failed:`, mailErr.message);
+        // Don't fail the request — member was already added
+      }
+    }
+
+    // ── Notifications ──────────────────────────────────────────────────────────
+    // const inviter = await client.user.findFirst({ where: { id: userId } });
+    for (const m of added) {
+      // 1) Notify the newly added person themselves
+      const newUser = await client.user.findFirst({ where: { email: m.emailuser } });
+      if (newUser) {
+        await pushNotification({
+          userId: newUser.id,
+          type: "MEMBER_JOINED",
+          message: `${inviter?.fullname || "Someone"} added you to the project "${project.projectName}"`,
+          projectId,
+        });
+      }
+    }
+    // 2) Notify all existing members that someone new joined
+    await notifyProjectMembers({
+      projectId,
+      type: "MEMBER_JOINED",
+      message: `${added.map((m) => m.emailuser).join(", ")} joined "${project.projectName}"`,
+      skipUserId: userId, // don't notify the person who did the inviting
+    });
+
+    // Activity log — one entry per added member
+    for (const m of added) {
+      await createActivityLog({
+        userId,
+        projectId,
+        action: "MEMBER_ADDED",
+        meta: { email: m.emailuser, role: m.role }
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: `${added.length} member(s) added and invited successfully`,
+      added,
+    });
+  } catch (e) {
+    console.error("sendingInviteToAddMemberToProject:", e);
+    return res.status(500).json({ success: false, message: "Error adding members" });
+  }
+};
+
+// ─── UPDATE ROLE ──────────────────────────────────────────────────────────────
+export const updateRole = async (req, res) => {
+  try {
+    const { projectId } = req.params;
+    const { email, newRole } = req.body;
+
+    if (!email || !newRole) {
+      return res.status(400).json({ success: false, message: "email and newRole are required" });
+    }
+
+    const validRoles = ["OWNER", "ADMIN", "EDITOR", "COMMENTER", "VIEWER"];
+    if (!validRoles.includes(newRole)) {
+      return res.status(400).json({ success: false, message: `Invalid role. Must be one of: ${validRoles.join(", ")}` });
+    }
+
+    const membership = await client.project_Members.findFirst({
+      where: { projectId, emailuser: email },
+    });
+    if (!membership) {
+      return res.status(404).json({ success: false, message: `${email} is not a member of this project` });
+    }
+
+    const updated = await client.project_Members.updateMany({
+      where: { projectId, emailuser: email },
+      data: { role: newRole },
+    });
+
+    return res.status(200).json({ success: true, message: "Role updated successfully", updated });
+  } catch (e) {
+    console.error("updateRole:", e);
+    return res.status(500).json({ success: false, message: "Error updating role" });
+  }
+};

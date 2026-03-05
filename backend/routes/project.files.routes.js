@@ -1,12 +1,28 @@
-import express from "express"; 
-import upload from "../middlewares/multer.js";
-import { getAllFilesOfProject, uploadfile } from "../controllers/files.controllers.js";
+// routes/project.files.routes.js
+// Mounted at: app.use("/api/v1/files", filesRoute)
 
-const router = express.Router() ; 
+import express from "express";
+import {
+  uploadfile,
+  getAllFilesOfProject,
+  getAllFilesOfTask,
+  deleteFile,
+} from "../controllers/files.controllers.js";
+import { authMiddleware } from "../middlewares/auth.middleware.js";
+import  upload  from "../middlewares/multer.js";
 
-router.post('/:userId/project/:projectId/task/:taskId/file/upload' ,upload.single('image'),uploadfile); 
+const router = express.Router();
 
-router.get('/:userId/project/:projectId/file/getAll' ,getAllFilesOfProject) ; 
+// POST   /api/v1/files/upload/:userId/:projectId/:taskId
+router.post("/upload/:userId/:projectId/:taskId", authMiddleware, upload.single("file"), uploadfile);
 
-export default router ;
+// GET    /api/v1/files/project/:projectId
+router.get("/project/:projectId", authMiddleware, getAllFilesOfProject);
 
+// GET    /api/v1/files/task/:taskId
+router.get("/task/:taskId", authMiddleware, getAllFilesOfTask);
+
+// DELETE /api/v1/files/:fileId/user/:userId
+router.delete("/:fileId/user/:userId", authMiddleware, deleteFile);
+
+export default router;

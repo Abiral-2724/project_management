@@ -1,207 +1,92 @@
-'use client'
-import { useState, useEffect } from 'react';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { toast } from 'sonner';
-import { Toaster } from '@/components/ui/sonner';
-import { useRouter } from 'next/navigation';
-import { Spinner } from '@/components/ui/spinner';
+"use client";
+import { useState } from "react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useAuth } from "@/context/AuthContext";
+import { Icon, Button, showToast } from "@/components/ui";
 
 export default function LoginPage() {
-  const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL;
+  const { login } = useAuth();
   const router = useRouter();
-  
-  const [formData, setFormData] = useState({
-    email: '',
-    password: ''
-  });
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [showPass, setShowPass] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
+  const [errors, setErrors] = useState({});
 
-  useEffect(() => {
-    // Check if user is already logged in
-    const planzoId = localStorage.getItem('planzo_id');
-    if (planzoId) {
-      router.push(`/${planzoId}/dashboard`);
-    }
-  }, [router]);
-
-  const handleChange = (e : any) => {
-    setFormData({
-      ...formData,
-      [e.target.name]: e.target.value
-    });
-    setError('');
-  };
-
-  const validateForm = () => {
-    if (!formData.email || !formData.password) {
-      setError('All fields are required');
-      return false;
-    }
-
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(formData.email)) {
-      setError('Please enter a valid email address');
-      return false;
-    }
-
-    if (formData.password.length < 6) {
-      setError('Password must be at least 6 characters long');
-      return false;
-    }
-
-    return true;
-  };
-
-  const handleSubmit = async (e : any) => {
-    e.preventDefault();
-    
-    if (!validateForm()) return;
-
+  const submit = async (e) => {
+    e?.preventDefault();
+    const errs = {};
+    if (!email) errs.email = "Email is required";
+    if (!password) errs.password = "Password is required";
+    if (Object.keys(errs).length) { setErrors(errs); return; }
     setLoading(true);
-    setError('');
-
     try {
-      const response = await fetch(`${API_BASE}/auth/user/login`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          email: formData.email,
-          password: formData.password
-        })
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        if (data.error) {
-          const zodErrors = data.error.map((e : any) => e.message).join(', ');
-          setError(zodErrors);
-        } else {
-          setError(data.message || 'Login failed');
-        }
-        return;
-      }
-
-      // Store user ID and token in localStorage
-      if (data.id) {
-        localStorage.setItem('planzo_id', data.id);
-      }
-      
-      if (data.token) {
-        localStorage.setItem('token', data.token);
-      }
-
-      // Show success toast
-      toast.success("Login successful!", {
-        description: "Redirecting to dashboard...",
-      });
-
-      // Clear form
-      setFormData({ email: '', password: '' });
-      
-      // Redirect to dashboard
-      setTimeout(() => {
-        router.push(`/${data.id}/dashboard`);
-      }, 1000);
-      
-    } catch (err) {
-      setError('An error occurred during login. Please try again.');
-      console.error('Login error:', err);
-    } finally {
-      setLoading(false);
-    }
+      const user = await login(email, password);
+      if (!user.isVerified) { router.push(`/auth/verify?id=${user.id}`); return; }
+      if (!user.fullname || user.fullname === "asana") { router.push(`/auth/setup?id=${user.id}`); return; }
+      router.push("/dashboard");
+    } catch (e) {
+      setErrors({ form: e.message });
+    } finally { setLoading(false); }
   };
 
   return (
-    <>
-      <Toaster />
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-indigo-50 via-purple-50 to-pink-50 p-4">
-        <Card className="w-full max-w-md shadow-lg">
-          <CardHeader className="space-y-1">
-            <CardTitle className="text-2xl font-bold text-center">Welcome back</CardTitle>
-            <CardDescription className="text-center">
-              Enter your credentials to access your account
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="email">Email</Label>
-                <Input
-                  id="email"
-                  name="email"
-                  type="email"
-                  placeholder="john@example.com"
-                  value={formData.email}
-                  onChange={handleChange}
-                  disabled={loading}
-                  required
-                />
-              </div>
+    <div className="min-h-screen bg-zinc-950 flex items-center justify-center p-4" style={{ fontFamily: "'DM Sans', system-ui, sans-serif" }}>
+      <style>{`@import url('https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&display=swap');`}</style>
 
-              <div className="space-y-2">
-                <Label htmlFor="password">Password</Label>
-                <Input
-                  id="password"
-                  name="password"
-                  type="password"
-                  placeholder="••••••••"
-                  value={formData.password}
-                  onChange={handleChange}
-                  disabled={loading}
-                  required
-                />
-              </div>
-
-              {error && (
-                <Alert variant="destructive">
-                  <AlertDescription>{error}</AlertDescription>
-                </Alert>
-              )}
-
-              <Button 
-                onClick={handleSubmit}
-                className="w-full" 
-                disabled={loading}
-              >
-                {loading ? 'Signing in...' : 'Sign In'}
-                {
-                  loading ? <Spinner /> : <></>
-                }
-              </Button>
-
-              <div className="flex items-center justify-between text-sm">
-                <a href="/auth/forgot-password" className="text-indigo-600 hover:underline">
-                  Forgot password?
-                </a>
-              </div>
-
-              <div className="relative">
-                <div className="absolute inset-0 flex items-center">
-                  <span className="w-full border-t" />
-                </div>
-                <div className="relative flex justify-center text-xs uppercase">
-                  <span className="bg-white px-2 text-gray-500">Or</span>
-                </div>
-              </div>
-
-              <p className="text-center text-sm text-gray-600">
-                Don't have an account?{' '}
-                <a href="/auth/signup" className="text-indigo-600 hover:underline font-medium">
-                  Sign up
-                </a>
-              </p>
-            </div>
-          </CardContent>
-        </Card>
+      {/* Background */}
+      <div className="absolute inset-0 overflow-hidden pointer-events-none">
+        <div className="absolute top-1/4 left-1/3 w-96 h-96 bg-indigo-600/8 rounded-full blur-3xl" />
+        <div className="absolute bottom-1/4 right-1/3 w-80 h-80 bg-violet-600/8 rounded-full blur-3xl" />
       </div>
-    </>
+
+      <div className="relative w-full max-w-sm">
+        {/* Logo */}
+        <div className="flex flex-col items-center mb-8">
+          <div className="w-10 h-10 rounded-2xl bg-indigo-600 flex items-center justify-center mb-3">
+            <Icon name="zap" size={18} className="text-white" />
+          </div>
+          <h1 className="text-xl font-bold text-white">Nexus</h1>
+          <p className="text-sm text-zinc-500 mt-1">Sign in to your workspace</p>
+        </div>
+
+        {/* Card */}
+        <div className="bg-zinc-900/80 backdrop-blur-sm border border-zinc-800 rounded-2xl p-6 shadow-2xl">
+          {errors.form && (
+            <div className="flex items-center gap-2 px-3 py-2.5 bg-red-500/10 border border-red-500/20 rounded-xl mb-4 text-sm text-red-400">
+              <Icon name="alertCircle" size={14} />
+              {errors.form}
+            </div>
+          )}
+
+          <form onSubmit={submit} className="space-y-4">
+            <div>
+              <label className="block text-xs font-medium text-zinc-400 mb-1.5">Email</label>
+              <input value={email} onChange={(e) => { setEmail(e.target.value); setErrors((p) => ({ ...p, email: "" })); }} type="email" placeholder="you@company.com" className={`w-full bg-zinc-800/80 border rounded-xl px-3.5 py-2.5 text-sm text-zinc-100 placeholder-zinc-600 focus:outline-none transition-colors ${errors.email ? "border-red-500/60" : "border-zinc-700/80 focus:border-indigo-500/80"}`} />
+              {errors.email && <p className="text-xs text-red-400 mt-1">{errors.email}</p>}
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-zinc-400 mb-1.5">Password</label>
+              <div className="relative">
+                <input value={password} onChange={(e) => { setPassword(e.target.value); setErrors((p) => ({ ...p, password: "" })); }} type={showPass ? "text" : "password"} placeholder="••••••••" className={`w-full bg-zinc-800/80 border rounded-xl px-3.5 py-2.5 pr-10 text-sm text-zinc-100 placeholder-zinc-600 focus:outline-none transition-colors ${errors.password ? "border-red-500/60" : "border-zinc-700/80 focus:border-indigo-500/80"}`} />
+                <button type="button" onClick={() => setShowPass(!showPass)} className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-600 hover:text-zinc-400 transition-colors">
+                  <Icon name={showPass ? "eyeOff" : "eye"} size={15} />
+                </button>
+              </div>
+              {errors.password && <p className="text-xs text-red-400 mt-1">{errors.password}</p>}
+            </div>
+
+            <Button type="submit" loading={loading} className="w-full justify-center py-2.5">Sign in</Button>
+          </form>
+
+          <p className="text-center text-xs text-zinc-500 mt-4">
+            Don't have an account?{" "}
+            <Link href="/auth/register" className="text-indigo-400 hover:text-indigo-300 transition-colors font-medium">Sign up</Link>
+          </p>
+        </div>
+      </div>
+    </div>
   );
 }

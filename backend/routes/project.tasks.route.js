@@ -1,25 +1,51 @@
-import express from "express"; 
-import { addSubTasks, addTasks, editsubTasks, editTasks, getalltaskswiththeirsubtasks, getmycreatedTask, getTaskAssignedoftheUser, markSubTaskComplete, markTaskComplete, projectDashboard } from "../controllers/tasks.controllers.js";
+// routes/project.tasks.route.js
+// Mounted at: app.use("/api/v1/task", tasksRoute)
 
-const router = express.Router()  ; 
+import express from "express";
+import {
+  addTasks,
+  addSubTasks,
+  getmycreatedTask,
+  getTaskAssignedoftheUser,
+  getalltaskswiththeirsubtasks,
+  markTaskComplete,
+  markSubTaskComplete,
+  editTasks,
+  editsubTasks,
+  projectDashboard,
+} from "../controllers/tasks.controllers.js";
+import { authMiddleware } from "../middlewares/auth.middleware.js";
 
-router.post('/:userId/project/:projectId/add/tasks' ,addTasks) ;
-router.post('/:userId/project/:projectId/task/add/subTasks' ,addSubTasks) ;
+const router = express.Router();
 
-router.patch('/:userId/project/:projectId/task/updatedtask/status' ,markTaskComplete)
-router.patch('/:userId/project/:projectId/task/updatedsubtask/status' ,markSubTaskComplete) ;
+// POST   /api/v1/task/:userId/:projectId           → add tasks
+router.post("/:userId/:projectId", authMiddleware, addTasks);
 
-router.get('/:userId/tasks/my/created/task' ,getmycreatedTask) ;
+// POST   /api/v1/task/subtask/:userId/:projectId   → add subtasks
+router.post("/subtask/:userId/:projectId", authMiddleware, addSubTasks);
 
-router.get('/:userId/project/:projectId/task/get/complete/detail' ,getalltaskswiththeirsubtasks) ; 
+// GET    /api/v1/task/my-created/:userId           → tasks created by user
+router.get("/my-created/:userId", authMiddleware, getmycreatedTask);
 
-router.patch('/:userId/project/:projectId/update/tasks' ,editTasks) ;
-router.patch('/:userId/project/:projectId/update/subtasks' ,editsubTasks) ;
+// GET    /api/v1/task/assigned/:userId             → tasks assigned to user
+router.get("/assigned/:userId", authMiddleware, getTaskAssignedoftheUser);
 
+// GET    /api/v1/task/:userId/:projectId/all       → all tasks + subtasks for a project
+router.get("/:userId/:projectId/all", authMiddleware, getalltaskswiththeirsubtasks);
 
-router.get('/:userId/project/get/myTasks' ,getTaskAssignedoftheUser) ; 
+// PATCH  /api/v1/task/complete/:userId/:projectId  → toggle task complete
+router.patch("/complete/:userId/:projectId", authMiddleware, markTaskComplete);
 
-router.get('/:userId/project/:projectId/dashboard/detail' ,projectDashboard) ;
+// PATCH  /api/v1/task/subtask/complete/:userId/:projectId → toggle subtask complete
+router.patch("/subtask/complete/:userId/:projectId", authMiddleware, markSubTaskComplete);
 
+// PUT    /api/v1/task/edit/:userId/:projectId      → edit tasks (bulk)
+router.put("/edit/:userId/:projectId", authMiddleware, editTasks);
 
-export default router ;
+// PUT    /api/v1/task/subtask/edit/:userId/:projectId → edit subtasks (bulk)
+router.put("/subtask/edit/:userId/:projectId", authMiddleware, editsubTasks);
+
+// GET    /api/v1/task/:userId/:projectId/dashboard → project dashboard analytics
+router.get("/:userId/:projectId/dashboard", authMiddleware, projectDashboard);
+
+export default router;

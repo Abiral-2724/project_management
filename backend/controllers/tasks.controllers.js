@@ -1,858 +1,497 @@
-import { PrismaClient } from "@prisma/client";
-import { z } from 'zod';
-import nodemailer from 'nodemailer' ;
-const client = new PrismaClient();
+import client from "../prisma.js";
+import { io } from "../index.js";
+import { createActivityLog } from "./activity.controllers.js";
 
-export const addTasks = async (req ,res) => {
-    try{
-        const userId = req.params.userId ; 
-        const projectId = req.params.projectId ; 
-
-        const user = await client.user.findFirst({
-            where : {
-                id : userId
-            }
-        }) ; 
-
-        const projectuserdetail = await client.project_Members.findFirst({
-            where:{
-                projectId : projectId ,
-                emailuser : user.email
-            }
-           
-        }) ; 
-
-        if(!projectuserdetail){
-            return res.status(400).json({
-                success : false ,
-                message : "no such project exits for user"
-            })
-        } 
-
-        if(projectuserdetail.role === "COMMENTER" || projectuserdetail.role === "VIEWER"){
-            return res.status(400).json({
-                success : false ,
-                message : "user have no right to edit tasks"
-            })
-        }
-
-        const {tasks} = req.body ; 
-
-        if(!Array.isArray(tasks) || tasks.length === 0){
-            return res.status(400).json({
-                success: false,
-                message: "tasks array is required"
-    
-            })
-        } 
-
-        const createdTasks = [] ; 
-
-        for(const task of tasks){
-            const { title, priority, startDate, dueDate, assigneEmail, status, description } = task;
-
-            if (!title || !priority || !startDate || !dueDate || !assigneEmail || !status) {
-                return res.status(400).json({
-                    success: false,
-                    message: "All fields are required for each task"
-                });
-            }
-
-            const checkassigne = await client.project_Members.findMany({
-                where:{
-                    projectId : projectId ,
-                    emailuser : assigneEmail 
-                }
-            }) ; 
-
-            if (!checkassigne) {
-                return res.status(400).json({
-                    success: false,
-                    message: `No such assignee exists: ${assigneEmail}`
-                });
-            }
-
-            const newTasks = await client.project_Tasks.create({
-                data : {
-                    title : title ,
-                    description : description,
-                    status : status ,
-                    project_id : projectId ,
-                    assignee_email : assigneEmail , 
-                    priority   : priority ,
-                    startDate : startDate ,
-                    dueDate : dueDate , 
-                    project_task_creator_id : userId
-                }
-            });
-            
-
-            createdTasks.push(newTasks);
-
-
-        }
-
-        return res.status(200).json({
-            success : true ,
-            tasks : createdTasks
-        })
-
-
-    }
-    catch(e){
-        console.log(e);
-        return res.status(500).json({
-            success: false,
-            message: "error adding tasks by user"
-
-        })
-    }
+// ─── NOTIFICATION HELPERS ────────────────────────────────────────────────────
+async function createAndPushNotification({ userId, type, message, projectId, taskId }) {
+  try {
+    const notif = await client.notification.create({
+      data: { user_id: userId, type, message, project_id: projectId || null, task_id: taskId || null }
+    });
+    io?.to(`user:${userId}`).emit("new_notification", notif);
+  } catch (e) {
+    console.warn("Notification error:", e.message);
+  }
 }
 
-export const addSubTasks = async(req ,res)=>{
-    try{
-        const userId = req.params.userId ; 
-        const projectId = req.params.projectId ; 
+async function notifyProjectMembers({ projectId, type, message, skipUserId = null }) {
+  try {
+    const members = await client.project_Members.findMany({ where: { projectId } });
+    for (const m of members) {
+      const user = await client.user.findFirst({ where: { email: m.emailuser } });
+      if (!user || user.id === skipUserId) continue;
+      await createAndPushNotification({ userId: user.id, type, message, projectId });
+    }
+  } catch (e) {
+    console.warn("notifyProjectMembers error:", e.message);
+  }
+}
 
-        const user = await client.user.findFirst({
-            where : {
-                id : userId
-            }
-        }) ; 
+// ─── ADD TASKS ────────────────────────────────────────────────────────────────
+export const addTasks = async (req, res) => {
+  try {
+    const { userId, projectId } = req.params;
+    const { tasks } = req.body;
 
-        const projectuserdetail = await client.project_Members.findFirst({
-            where:{
-                projectId : projectId ,
-                emailuser : user.email
-            }
-           
-        }) ; 
+    if (!Array.isArray(tasks) || tasks.length === 0) {
+      return res.status(400).json({ success: false, message: "tasks array is required" });
+    }
 
-        if(!projectuserdetail){
-            return res.status(400).json({
-                success : false ,
-                message : "no such project exits for user"
-            })
-        } 
+    const user = await client.user.findFirst({ where: { id: userId } });
+    if (!user) return res.status(404).json({ success: false, message: "User not found" });
 
-        if(projectuserdetail.role === "COMMENTER" || projectuserdetail.role === "VIEWER"){
-            return res.status(400).json({
-                success : false ,
-                message : "user have no right to edit tasks"
-            })
+    const membership = await client.project_Members.findFirst({
+      where: { projectId, emailuser: user.email },
+    });
+    if (!membership) {
+      return res.status(403).json({ success: false, message: "You are not a member of this project" });
+    }
+    if (["COMMENTER", "VIEWER"].includes(membership.role)) {
+      return res.status(403).json({ success: false, message: "You do not have permission to add tasks" });
+    }
+
+    const createdTasks = [];
+
+    for (const task of tasks) {
+      const { title, priority, startDate, dueDate, assigneEmail, status, description } = task;
+
+      if (!title || !priority || !startDate || !dueDate || !assigneEmail || !status) {
+        return res.status(400).json({ success: false, message: "All task fields are required: title, priority, startDate, dueDate, assigneEmail, status" });
+      }
+
+      // Verify assignee is a project member
+      const assigneeMember = await client.project_Members.findFirst({
+        where: { projectId, emailuser: assigneEmail },
+      });
+      if (!assigneeMember) {
+        return res.status(400).json({ success: false, message: `${assigneEmail} is not a member of this project` });
+      }
+
+      const newTask = await client.project_Tasks.create({
+        data: {
+          title,
+          description: description || "",
+          status,
+          project_id: projectId,
+          assignee_email: assigneEmail,
+          priority,
+          startDate: new Date(startDate),
+          dueDate: new Date(dueDate),
+          project_task_creator_id: userId,
+        },
+      });
+      createdTasks.push(newTask);
+
+      // Notify assignee (skip if assigning to yourself)
+      if (assigneEmail !== user.email) {
+        const assignee = await client.user.findFirst({ where: { email: assigneEmail } });
+        if (assignee) {
+          await createAndPushNotification({
+            userId: assignee.id,
+            type: "TASK_ASSIGNED",
+            message: `${user.fullname || user.email} assigned you a task: "${title}"`,
+            projectId,
+            taskId: newTask.id,
+          });
         }
-
-            const {subtasks} = req.body ; 
-
-            if(!Array.isArray(subtasks) || subtasks.length === 0){
-                return res.status(400).json({
-                    success: false,
-                    message: "tasks array is required"
-        
-                })
-            } 
-
-            const createdSubtasks = [] ; 
-
-            for(const subtask of subtasks){
-
-                const { title, priority, startDate, dueDate, assigneEmail, status, description ,taskId } = subtask ;
-
-                if(!title || !status || !priority || !assigneEmail || !startDate || !dueDate || !taskId){
-                    return res.status(500).json({
-                        success: false,
-                        message: "error : missing field"
-            
-                    })
-                }
-
-                const addingsubtask = await client.project_SubTasks.create({
-                    data : {
-                        title : title ,
-                        description : description ,
-                        status : status ,
-                        priority : priority ,
-                        assignee_email : assigneEmail ,
-                        startDate : startDate ,
-                        dueDate : dueDate,
-                        projectId : projectId ,
-                        project_Tasks_id : taskId ,
-                        project_sub_task_creator_id:userId
-                    }
-                }) ;
-
-                createdSubtasks.push(addingsubtask) ; 
-            }
-
-            
-
-
-           
-
-            return res.status(200).json({
-                success : true ,
-                subtasks : createdSubtasks
-            })
-
-
+      }
     }
-    catch(e){
-        console.log(e);
-        return res.status(500).json({
-            success: false,
-            message: "error getting all project subtasks"
 
-        })
+    // Activity log for each task created
+    for (const task of createdTasks) {
+      await createActivityLog({ userId, projectId, taskId: task.id, action: "TASK_CREATED", meta: { taskTitle: task.title, assignee: task.assignee_email } });
     }
-}
 
-export const getmycreatedTask = async(req ,res) => {
-    try{
-        const userId = req.params.userId ; 
+    return res.status(201).json({ success: true, tasks: createdTasks });
+  } catch (e) {
+    console.error("addTasks:", e);
+    return res.status(500).json({ success: false, message: "Error adding tasks" });
+  }
+};
 
-        if(!userId){
-            return res.status(500).json({
-                success: false,
-                message: "error getting userid"
-            })
-        }
+// ─── ADD SUBTASKS ─────────────────────────────────────────────────────────────
+export const addSubTasks = async (req, res) => {
+  try {
+    const { userId, projectId } = req.params;
+    const { subtasks } = req.body;
 
-        const createdtasks = await client.project_Tasks.findMany({
-            where : {
-                project_task_creator_id : userId 
-            }
-        }) ; 
-
-        return res.status(200).json({
-            success : true ,
-            message : "my created tasks got successfully" , 
-            tasks : createdtasks 
-        })
-
+    if (!Array.isArray(subtasks) || subtasks.length === 0) {
+      return res.status(400).json({ success: false, message: "subtasks array is required" });
     }
-    catch(e){
-        console.log(e);
-        return res.status(500).json({
-            success: false,
-            message: "error getting all created tasks"
 
-        })
+    const user = await client.user.findFirst({ where: { id: userId } });
+    if (!user) return res.status(404).json({ success: false, message: "User not found" });
+
+    const membership = await client.project_Members.findFirst({
+      where: { projectId, emailuser: user.email },
+    });
+    if (!membership) {
+      return res.status(403).json({ success: false, message: "You are not a member of this project" });
     }
-}
-
-export const markTaskComplete = async(req ,res) => {
-    try{
-            const {taskId} = req.body ; 
-
-            const userId = req.params.userId ; 
-            const projectId = req.params.projectId ; 
-
-            const user = await client.user.findFirst({
-                where : {
-                    id : userId 
-                }
-            }) ; 
-
-            const projectmember = await client.project_Members.findFirst({
-                where : {
-                    projectId : projectId ,
-                    emailuser : user.email
-                }
-            }) 
-
-            if(!projectmember){
-                return res.status(400).json({
-                    success: false,
-                    message: "User is not the member of the project"
-        
-                })
-            }
-
-            const role = projectmember.role ; 
-
-            if(role === "COMMENTER" || role === "VIEWER"){
-                return res.status(400).json({
-                    success: false,
-                    message: "you do not have right to mark the task as complete"
-        
-                })
-            }
-
-            if(!taskId){
-                return res.status(400).json({
-                    success: false,
-                    message: "no task id found"
-        
-                })
-            }
-
-            const task = await client.project_Tasks.findFirst({
-                where : {
-                    id : taskId
-                } 
-            });
-
-            let completeTaskDate = task.createdAt
-            if(task.mark_complete === true){
-                completeTaskDate = new Date();
-            }
-
-            const updatedtask = await client.project_Tasks.update({
-                where : {
-                    id : taskId
-                } ,
-                data : {
-                    mark_complete : !task.mark_complete ,
-                    time_TaskCompletion : completeTaskDate
-                }
-            });
-
-            return res.status(200).json({
-                success : true ,
-                message : "task completion status updated"
-            })
+    if (["COMMENTER", "VIEWER"].includes(membership.role)) {
+      return res.status(403).json({ success: false, message: "You do not have permission to add subtasks" });
     }
-    catch(e){
-        console.log(e);
-        return res.status(500).json({
-            success: false,
-            message: "error marking tasks complete"
 
-        })
+    const createdSubtasks = [];
+
+    for (const subtask of subtasks) {
+      const { title, priority, startDate, dueDate, assigneEmail, status, description, taskId } = subtask;
+
+      if (!title || !status || !priority || !assigneEmail || !startDate || !dueDate || !taskId) {
+        return res.status(400).json({ success: false, message: "All subtask fields are required: title, status, priority, assigneEmail, startDate, dueDate, taskId" });
+      }
+
+      const parentTask = await client.project_Tasks.findFirst({ where: { id: taskId, project_id: projectId } });
+      if (!parentTask) {
+        return res.status(404).json({ success: false, message: `Parent task ${taskId} not found in this project` });
+      }
+
+      const newSubtask = await client.project_SubTasks.create({
+        data: {
+          title,
+          description: description || "",
+          status,
+          priority,
+          assignee_email: assigneEmail,
+          startDate: new Date(startDate),
+          dueDate: new Date(dueDate),
+          projectId,
+          project_Tasks_id: taskId,
+          project_sub_task_creator_id: userId,
+        },
+      });
+      createdSubtasks.push(newSubtask);
     }
-}
 
-export const markSubTaskComplete = async(req ,res) => {
-    try{
-            const {subtaskId} = req.body ; 
+    return res.status(201).json({ success: true, subtasks: createdSubtasks });
+  } catch (e) {
+    console.error("addSubTasks:", e);
+    return res.status(500).json({ success: false, message: "Error adding subtasks" });
+  }
+};
 
-            if(!subtaskId){
-                return res.status(400).json({
-                    success: false,
-                    message: "no task id found"
+// ─── GET MY CREATED TASKS ─────────────────────────────────────────────────────
+export const getmycreatedTask = async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const tasks = await client.project_Tasks.findMany({
+      where: { project_task_creator_id: userId },
+      orderBy: { createdAt: "desc" },
+    });
+    return res.status(200).json({ success: true, tasks });
+  } catch (e) {
+    console.error("getmycreatedTask:", e);
+    return res.status(500).json({ success: false, message: "Error fetching tasks" });
+  }
+};
 
-        
-                })
-            }
+// ─── GET TASKS ASSIGNED TO USER ───────────────────────────────────────────────
+export const getTaskAssignedoftheUser = async (req, res) => {
+  try {
+    const { userId } = req.params;
 
-            const userId = req.params.userId ; 
-            const projectId = req.params.projectId ; 
+    const user = await client.user.findFirst({ where: { id: userId } });
+    if (!user) return res.status(404).json({ success: false, message: "User not found" });
 
-            const user = await client.user.findFirst({
-                where : {
-                    id : userId 
-                }
-            }) ; 
+    const tasks = await client.project_Tasks.findMany({
+      where: { assignee_email: user.email },
+      orderBy: { createdAt: "desc" },
+    });
 
+    return res.status(200).json({ success: true, tasks });
+  } catch (e) {
+    console.error("getTaskAssignedoftheUser:", e);
+    return res.status(500).json({ success: false, message: "Error fetching assigned tasks" });
+  }
+};
 
-            const projectmember = await client.project_Members.findFirst({
-                where : {
-                    projectId : projectId ,
-                    emailuser : user.email
-                }
-            }) 
+// ─── GET ALL TASKS WITH SUBTASKS ──────────────────────────────────────────────
+// BUG FIX: original used spread {...tasks, allSubtasksDestail} which puts object not array
+export const getalltaskswiththeirsubtasks = async (req, res) => {
+  try {
+    const { userId, projectId } = req.params;
 
-            if(!projectmember){
-                return res.status(400).json({
-                    success: false,
-                    message: "User is not the member of the project"
-        
-                })
-            }
+    const allTasks = await client.project_Tasks.findMany({
+      where: { project_id: projectId },
+      orderBy: { createdAt: "desc" },
+    });
 
-            const role = projectmember.role ; 
-
-            if(role === "COMMENTER" || role === "VIEWER"){
-                return res.status(400).json({
-                    success: false,
-                    message: "you do not have right to mark the task as complete"
-        
-                })
-            }
-
-            const subtask = await client.project_SubTasks.findFirst({
-                where : {
-                    id : subtaskId
-                }
-            })
-
-            let completeTaskDate = subtask.createdAt
-            if(subtask.mark_complete === true){
-                completeTaskDate = new Date();
-            }
-
-            const updatedtask = await client.project_SubTasks.update({
-                where : {
-                    id : subtaskId
-                } ,
-                data : {
-                    mark_complete : !subtask.mark_complete,
-                    time_SubTaskCompletion : completeTaskDate
-                }
-            });
-
-            return res.status(200).json({
-                success : true ,
-                message : "task completion status updated"
-            })
-    }
-    catch(e){
-        console.log(e);
-        return res.status(500).json({
-            success: false,
-            message: "error marking tasks complete"
-
-        })
-    }
-}
-
-export const getTaskAssignedoftheUser = async(req ,res) => {
-    try{
-        const userId = req.params.userId; 
-        // console.log(userId) ; 
-        const user = await client.user.findFirst({
-            where : {
-                id : userId
-            }
-        }) ; 
-
-        // console.log(user.email)
-
-        if(!user){
-            console.log(e);
-        return res.status(500).json({
-            success: false,
-            message: "user does not exits"
-
-        })
-        }
-
-        const tasksofUser = await client.project_Tasks.findMany({
-            where:{
-                assignee_email : user.email
-            }
-        }) ;
-
-        return res.status(200).json({
-            success : true ,
-            tasks : tasksofUser
-        })
-    }catch(e){
-        console.log(e);
-        return res.status(500).json({
-            success: false,
-            message: "error marking tasks complete"
-
-        })
-    }
-}
-
-export const getalltaskswiththeirsubtasks = async(req ,res) => {
-    try{
-        const userId = req.params.userId ; 
-        const projectId = req.params.projectId ; 
-
-        const allTasksoftheproject = await client.project_Tasks.findMany({
-            where : {
-                project_id : projectId 
-            }
-        }) ;
-
-        const completeTaskListWithSubtasks = [] ; 
-
-         for(const tasks of allTasksoftheproject){
-
-            const taskId = tasks.id ; 
-
-            const allSubtasksDestail = await client.project_SubTasks.findMany({
-                where : {
-                    project_Tasks_id : taskId
-                }
-            });
-                const newlist = {...tasks ,allSubtasksDestail} ; 
-            // tasks.push(allSubtasksDestail) ; 
-
-            completeTaskListWithSubtasks.push(newlist) ; 
-
-         }
-
-        return res.status(200).json({
-            success : true ,
-            TasksDetail : completeTaskListWithSubtasks
-        })
-    } 
-    catch(e){
-        console.log(e);
-        return res.status(500).json({
-            success: false,
-            message: "error getting all tasks with their subtasks"
-
-        })
-    }
-}
-
-export const editTasks = async(req ,res) => {
-    try{
-        const userId = req.params.userId ; 
-        const projectId = req.params.projectId ; 
-
-        const user = await client.user.findFirst({
-            where : {
-                id : userId
-            }
-        }) ; 
-
-        const projectuserdetail = await client.project_Members.findFirst({
-            where:{
-                projectId : projectId ,
-                emailuser : user.email
-            }
-           
-        }) ; 
-
-        if(!projectuserdetail){
-            return res.status(400).json({
-                success : false ,
-                message : "no such project exits for user"
-            })
-        } 
-
-        const role = projectuserdetail.role ; 
-        console.log(role) ; 
-
-        if(role === "COMMENTER" || role === "VIEWER"){
-            console.log(role)
-            return res.status(400).json({
-                success : false ,
-                message : "user have no right to edit tasks"
-            })
-        }
-
-
-    const {tasks} = req.body ;
-
-    if(!Array.isArray(tasks) || tasks.length === 0){
-        return res.status(400).json({
-            success: false,
-            message: "tasks array is required"
-
-        })
-    } 
-
-    const editTasks = [] ; 
-
-    for(const task of tasks){
-        const { title, priority, startDate, dueDate, assigneEmail, status, description ,taskId } = task;
-
-        if(!taskId){
-            return res.status(400).json({
-                success: false,
-                message: "missing task id"
-    
-            })
-        }
-
-
-        const newUpdatedTasks = await client.project_Tasks.updateMany({
-            where : {
-                id : taskId
-            } ,
-            data : {
-                title : title ,
-                description : description,
-                status : status ,
-                project_id : projectId ,
-                assignee_email : assigneEmail , 
-                priority   : priority ,
-                startDate : startDate ,
-                dueDate : dueDate , 
-                project_task_creator_id : userId ,
-               
-            }
+    const TasksDetail = await Promise.all(
+      allTasks.map(async (task) => {
+        const subtasks = await client.project_SubTasks.findMany({
+          where: { project_Tasks_id: task.id },
+          orderBy: { createdAt: "asc" },
         });
+        return { ...task, subtasks };
+      })
+    );
 
-        editTasks.push(newUpdatedTasks)
+    return res.status(200).json({ success: true, TasksDetail });
+  } catch (e) {
+    console.error("getalltaskswiththeirsubtasks:", e);
+    return res.status(500).json({ success: false, message: "Error fetching tasks" });
+  }
+};
 
+// ─── MARK TASK COMPLETE ───────────────────────────────────────────────────────
+export const markTaskComplete = async (req, res) => {
+  try {
+    const { userId, projectId } = req.params;
+    const { taskId } = req.body;
 
+    if (!taskId) return res.status(400).json({ success: false, message: "taskId is required" });
+
+    const user = await client.user.findFirst({ where: { id: userId } });
+    const membership = await client.project_Members.findFirst({
+      where: { projectId, emailuser: user?.email },
+    });
+    if (!membership) return res.status(403).json({ success: false, message: "Not a project member" });
+    if (["COMMENTER", "VIEWER"].includes(membership.role)) {
+      return res.status(403).json({ success: false, message: "You do not have permission to complete tasks" });
+    }
+
+    const task = await client.project_Tasks.findFirst({ where: { id: taskId } });
+    if (!task) return res.status(404).json({ success: false, message: "Task not found" });
+
+    const updated = await client.project_Tasks.update({
+      where: { id: taskId },
+      data: {
+        mark_complete: !task.mark_complete,
+        time_TaskCompletion: task.mark_complete ? task.createdAt : new Date(),
+      },
+    });
+
+    // When a task is marked COMPLETE (not un-complete), notify all project members
+    if (updated.mark_complete === true) {
+      const project = await client.projects.findFirst({ where: { id: projectId } });
+      await notifyProjectMembers({
+        projectId,
+        type: "TASK_COMPLETED",
+        message: `Task "${updated.title}" was marked complete in "${project?.projectName || "a project"}"`,
+        skipUserId: userId,
+      });
+    }
+
+    await createActivityLog({
+      userId,
+      projectId,
+      taskId,
+      action: updated.mark_complete ? "TASK_COMPLETED" : "TASK_REOPENED",
+      meta: { taskTitle: updated.title }
+    });
+
+    return res.status(200).json({ success: true, message: "Task completion toggled", task: updated });
+  } catch (e) {
+    console.error("markTaskComplete:", e);
+    return res.status(500).json({ success: false, message: "Error toggling task completion" });
+  }
+};
+
+// ─── MARK SUBTASK COMPLETE ────────────────────────────────────────────────────
+export const markSubTaskComplete = async (req, res) => {
+  try {
+    const { userId, projectId } = req.params;
+    const { subtaskId } = req.body;
+
+    if (!subtaskId) return res.status(400).json({ success: false, message: "subtaskId is required" });
+
+    const user = await client.user.findFirst({ where: { id: userId } });
+    const membership = await client.project_Members.findFirst({
+      where: { projectId, emailuser: user?.email },
+    });
+    if (!membership) return res.status(403).json({ success: false, message: "Not a project member" });
+    if (["COMMENTER", "VIEWER"].includes(membership.role)) {
+      return res.status(403).json({ success: false, message: "You do not have permission to complete subtasks" });
+    }
+
+    const subtask = await client.project_SubTasks.findFirst({ where: { id: subtaskId } });
+    if (!subtask) return res.status(404).json({ success: false, message: "Subtask not found" });
+
+    const updated = await client.project_SubTasks.update({
+      where: { id: subtaskId },
+      data: {
+        mark_complete: !subtask.mark_complete,
+        time_SubTaskCompletion: subtask.mark_complete ? subtask.createdAt : new Date(),
+      },
+    });
+
+    return res.status(200).json({ success: true, message: "Subtask completion toggled", subtask: updated });
+  } catch (e) {
+    console.error("markSubTaskComplete:", e);
+    return res.status(500).json({ success: false, message: "Error toggling subtask completion" });
+  }
+};
+
+// ─── EDIT TASKS (bulk) ────────────────────────────────────────────────────────
+export const editTasks = async (req, res) => {
+  try {
+    const { userId, projectId } = req.params;
+    const { tasks } = req.body;
+
+    if (!Array.isArray(tasks) || tasks.length === 0) {
+      return res.status(400).json({ success: false, message: "tasks array is required" });
+    }
+
+    const user = await client.user.findFirst({ where: { id: userId } });
+    const membership = await client.project_Members.findFirst({
+      where: { projectId, emailuser: user?.email },
+    });
+    if (!membership) return res.status(403).json({ success: false, message: "Not a project member" });
+    if (["COMMENTER", "VIEWER"].includes(membership.role)) {
+      return res.status(403).json({ success: false, message: "You do not have permission to edit tasks" });
+    }
+
+    const updatedTasks = [];
+
+    for (const task of tasks) {
+      const { taskId, title, priority, startDate, dueDate, assigneEmail, status, description } = task;
+      if (!taskId) return res.status(400).json({ success: false, message: "taskId is required for each task" });
+
+      const updated = await client.project_Tasks.update({
+        where: { id: taskId },
+        data: {
+          ...(title !== undefined && { title }),
+          ...(description !== undefined && { description }),
+          ...(status !== undefined && { status }),
+          ...(priority !== undefined && { priority }),
+          ...(assigneEmail !== undefined && { assignee_email: assigneEmail }),
+          ...(startDate !== undefined && { startDate: new Date(startDate) }),
+          ...(dueDate !== undefined && { dueDate: new Date(dueDate) }),
+        },
+      });
+      updatedTasks.push(updated);
+    }
+
+    for (const task of updatedTasks) {
+      await createActivityLog({ userId, projectId, taskId: task.id, action: "TASK_UPDATED", meta: { taskTitle: task.title } });
+    }
+
+    return res.status(200).json({ success: true, updatedTasks });
+  } catch (e) {
+    console.error("editTasks:", e);
+    return res.status(500).json({ success: false, message: "Error editing tasks" });
+  }
+};
+
+// ─── EDIT SUBTASKS (bulk) ─────────────────────────────────────────────────────
+export const editsubTasks = async (req, res) => {
+  try {
+    const { userId, projectId } = req.params;
+    const { subtasks } = req.body;
+
+    if (!Array.isArray(subtasks) || subtasks.length === 0) {
+      return res.status(400).json({ success: false, message: "subtasks array is required" });
+    }
+
+    const user = await client.user.findFirst({ where: { id: userId } });
+    const membership = await client.project_Members.findFirst({
+      where: { projectId, emailuser: user?.email },
+    });
+    if (!membership) return res.status(403).json({ success: false, message: "Not a project member" });
+    if (["COMMENTER", "VIEWER"].includes(membership.role)) {
+      return res.status(403).json({ success: false, message: "You do not have permission to edit subtasks" });
+    }
+
+    const updatedSubTasks = [];
+
+    for (const subtask of subtasks) {
+      const { subtaskId, title, priority, startDate, dueDate, assigneEmail, status, description } = subtask;
+      if (!subtaskId) return res.status(400).json({ success: false, message: "subtaskId is required for each subtask" });
+
+      const updated = await client.project_SubTasks.update({
+        where: { id: subtaskId },
+        data: {
+          ...(title !== undefined && { title }),
+          ...(description !== undefined && { description }),
+          ...(status !== undefined && { status }),
+          ...(priority !== undefined && { priority }),
+          ...(assigneEmail !== undefined && { assignee_email: assigneEmail }),
+          ...(startDate !== undefined && { startDate: new Date(startDate) }),
+          ...(dueDate !== undefined && { dueDate: new Date(dueDate) }),
+        },
+      });
+      updatedSubTasks.push(updated);
+    }
+
+    return res.status(200).json({ success: true, updatedSubTasks });
+  } catch (e) {
+    console.error("editsubTasks:", e);
+    return res.status(500).json({ success: false, message: "Error editing subtasks" });
+  }
+};
+
+// ─── PROJECT DASHBOARD ────────────────────────────────────────────────────────
+export const projectDashboard = async (req, res) => {
+  try {
+    const { userId, projectId } = req.params;
+
+    const projectTasks = await client.project_Tasks.findMany({ where: { project_id: projectId } });
+    const projectSubTasks = await client.project_SubTasks.findMany({ where: { projectId } });
+
+    const totalTask = projectTasks.length + projectSubTasks.length;
+    const completedTask = [...projectTasks, ...projectSubTasks].filter((t) => t.mark_complete).length;
+    const notcompletedTask = totalTask - completedTask;
+
+    let countHighPriority = 0, countMediumPriority = 0, countLowPriority = 0;
+    const taskcompletionOvertime = [];
+    const assigneeMap = {}; // email → { email, fullname, profile, incompleteCount, completeCount }
+    const profileMap = {};
+
+    const allItems = [
+      ...projectTasks.map((t) => ({ ...t, _type: "task" })),
+      ...projectSubTasks.map((t) => ({ ...t, _type: "subtask" })),
+    ];
+
+    for (const item of allItems) {
+      // Priority counts
+      if (item.priority === "High") countHighPriority++;
+      if (item.priority === "Medium") countMediumPriority++;
+      if (item.priority === "Low") countLowPriority++;
+
+      // Completion overtime
+      taskcompletionOvertime.push({
+        complete: item.mark_complete,
+        timeofcompletion: item._type === "task" ? item.time_TaskCompletion : item.time_SubTaskCompletion,
+      });
+
+      // Assignee breakdown
+      const assigneeEmail = item.assignee_email;
+      if (!assigneeMap[assigneeEmail]) {
+        const user = await client.user.findFirst({
+          where: { email: assigneeEmail },
+          select: { fullname: true, profile: true, email: true },
+        });
+        assigneeMap[assigneeEmail] = {
+          email: assigneeEmail,
+          fullname: user?.fullname || assigneeEmail,
+          profile: user?.profile || null,
+          incompleteCount: 0,
+          completeCount: 0,
+        };
+        profileMap[assigneeEmail] = user?.profile || null;
+      }
+
+      if (item.mark_complete) {
+        assigneeMap[assigneeEmail].completeCount++;
+      } else {
+        assigneeMap[assigneeEmail].incompleteCount++;
+      }
     }
 
     return res.status(200).json({
-        success : true ,
-        updatedTasks : editTasks
-    })
-
-    }
-    catch(e){
-        console.log(e);
-        return res.status(500).json({
-            success: false,
-            message: "error editing tasks"
-
-        })
-    }
-}
-
-export const editsubTasks = async(req ,res) => {
-        try{
-
-            const userId = req.params.userId ; 
-        const projectId = req.params.projectId ; 
-
-        const user = await client.user.findFirst({
-            where : {
-                id : userId
-            }
-        }) ; 
-
-        const projectuserdetail = await client.project_Members.findFirst({
-            where:{
-                projectId : projectId ,
-                emailuser : user.email
-            }
-           
-        }) ; 
-
-        if(!projectuserdetail){
-            return res.status(400).json({
-                success : false ,
-                message : "no such project exits for user"
-            })
-        } 
-
-        if(projectuserdetail.role === "COMMENTER" || projectuserdetail.role === "VIEWER"){
-            return res.status(400).json({
-                success : false ,
-                message : "user have no right to edit tasks"
-            })
-        }
-
-        const {subtasks} = req.body ;
-
-    if(!Array.isArray(subtasks) || subtasks.length === 0){
-        return res.status(400).json({
-            success: false,
-            message: "tasks array is required"
-
-        })
-    } 
-
-    const editSubTasks = [] ; 
-
-    for(const task of subtasks){
-        const { title, priority, startDate, dueDate, assigneEmail, status, description ,subtaskId } = task;
-
-        if(!subtaskId){
-            return res.status(400).json({
-                success: false,
-                message: "missing task id"
-    
-            })
-        }
-
-
-        const newUpdatedSubTasks = await client.project_SubTasks.updateMany({
-            where : {
-                id : subtaskId
-            } ,
-            data : {
-                title : title ,
-                description : description ,
-                status : status ,
-                priority : priority ,
-                assignee_email : assigneEmail ,
-                startDate : startDate ,
-                dueDate : dueDate,
-            }
-        });
-
-        editSubTasks.push(newUpdatedSubTasks)
-
-
-    }
-
-    return res.status(200).json({
-        success : true ,
-        updatedSubTasks : editSubTasks
-    })
-
-
-    }
-    catch(e){
-        console.log(e);
-        return res.status(500).json({
-            success: false,
-            message: "error editing subtasks"
-
-        })
-    }
-}
-
-export const projectDashboard = async(req ,res) => {
-    try{
-            const userId = req.params.userId ; 
-            const projectId = req.params.projectId ; 
-
-            const projectTask = await client.project_Tasks.findMany({
-                where : {
-                    project_id : projectId
-                }
-            }) ; 
-
-            const projectSubTasks = await client.project_SubTasks.findMany({
-                where : {
-                    projectId : projectId
-                }
-            }) ;
-
-            const totalTask = projectTask.length + projectSubTasks.length ; 
-
-            const projectTaskMarkComplete = projectTask.filter((el) => {
-                return el.mark_complete === true
-            }) ; 
-
-            const projectSubTasksMarkComplete = projectSubTasks.filter((el) => {
-                return el.mark_complete === true 
-            })
-
-            const totalCompletedTask = projectTaskMarkComplete.length + projectSubTasksMarkComplete.length
-
-            const totalNotCompletedTask = totalTask - totalCompletedTask ;
-
-
-            let taskcompletionOvertime = [] ;
-            let countLowPriority = 0 ; 
-            let countHighPriority = 0 ;
-            let countMediumPriority = 0 ; 
-
-            let taskwithassignemail = [] ; 
-
-            let profileMap = {};
-
-            for (const el of projectTask) {
-               // if(el.mark_complete === true){
-                    taskcompletionOvertime.push({
-                        complete : el.mark_complete ,
-                        timeofcompletion : el.time_TaskCompletion
-                    })
-              //  }
-                if(el.priority === "High"){
-                    countHighPriority = countHighPriority + 1 ; 
-                }
-                if(el.priority === "Low"){
-                    countLowPriority = countLowPriority + 1 ; 
-                }
-                if(el.priority === "Medium"){
-                    countMediumPriority = countMediumPriority + 1 ; 
-                }
-
-                const user = await client.user.findUnique({
-                    where : {
-                        email : el.assignee_email
-                    }
-                })
-
-                if(!user){
-                    return res.status(400).json({
-                        success : false ,
-                        message : "user not found"
-                    })
-                }
-console.log(user.profile)
-
-profileMap[user.email] = user.profile;
-
-                taskwithassignemail.push({
-                    email : el.assignee_email ,
-                    complete : el.mark_complete,
-                    
-                    profile : user?.profile || null
-                })
-
-            }
-            
-
-            for (const el of projectSubTasks) {
-               // if(el.mark_complete === true){
-                    taskcompletionOvertime.push({
-                        complete : el.mark_complete ,
-                        timeofcompletion : el.time_SubTaskCompletion
-                    })
-                //}
-                if(el.priority === "High"){
-                    countHighPriority = countHighPriority + 1 ; 
-                }
-                if(el.priority === "Low"){
-                    countLowPriority = countLowPriority + 1 ; 
-                }
-                if(el.priority === "Medium"){
-                    countMediumPriority = countMediumPriority + 1 ; 
-                }
-                const user = await client.user.findUnique({
-                    where : {
-                        email : el.assignee_email
-                    }
-                })
-
-                //console.log(user) ; 
-
-                if(!user){
-                    return res.status(400).json({
-                        success : false ,
-                        message : "user not found"
-                    })
-                }
-
-                profileMap[user.email] = user.profile;
-
-
-                taskwithassignemail.push({
-                    email : el.assignee_email ,
-                    complete : el.mark_complete,
-                    profile : user?.profile || null
-                })
-            } ;
-
-
-            const countOfUncompletedTaskByAssigne = taskwithassignemail.reduce((acc, curr) => {
-                if (!acc[curr.email]) {
-                  acc[curr.email] = { email: curr.email, incompleteCount: 0,completeCount:0 };
-                }
-                if (curr.complete === false) {
-                  acc[curr.email].incompleteCount += 1;
-                }
-                if(curr.complete === true){
-                    acc[curr.email].completeCount += 1
-                }
-                return acc;
-              },[]) ; 
-
-              const counttaskWithAssignEmails = Object.values(countOfUncompletedTaskByAssigne);
-              
-
-            
-
-
-            return res.status(200).json({
-                success : true ,
-                //   projectTask : projectTask ,
-                //   projectSubTasks : projectSubTasks ,
-                totalTask : totalTask,
-                completedTask : totalCompletedTask ,
-                notcompletedTask : totalNotCompletedTask,
-                taskcompletion : taskcompletionOvertime ,
-                highPriority : countHighPriority ,
-                lowPriority : countLowPriority ,
-                mediumPriority : countMediumPriority,
-                counttaskWithAssignEmails : counttaskWithAssignEmails,
-                profile : profileMap
-            })
-    }
-    catch(e){
-        console.log(e);
-        return res.status(500).json({
-            success: false,
-            message: "error getting project daskhbord "
-
-        })
-    }
-}
+      success: true,
+      totalTask,
+      completedTask,
+      notcompletedTask,
+      taskcompletion: taskcompletionOvertime,
+      highPriority: countHighPriority,
+      mediumPriority: countMediumPriority,
+      lowPriority: countLowPriority,
+      counttaskWithAssignEmails: Object.values(assigneeMap),
+      profile: profileMap,
+    });
+  } catch (e) {
+    console.error("projectDashboard:", e);
+    return res.status(500).json({ success: false, message: "Error fetching dashboard" });
+  }
+};

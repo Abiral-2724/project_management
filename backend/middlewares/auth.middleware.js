@@ -1,29 +1,23 @@
-import jwt from 'jsonwebtoken' ; 
-import dotenv from 'dotenv' ; 
+import jwt from "jsonwebtoken";
 
-dotenv.config({}) ; 
+export const authMiddleware = (req, res, next) => {
+  try {
+    const authHeader = req.headers.authorization;
 
-export const authMiddleware = (req ,res ,next) => {
-    const token = req.header('Authorization') ; 
-    if(!token){
-        return res.status(401).json({
-            success : false , 
-            message : "Authentication failed" , 
-            error : 'Access denied'
-        })
+    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+      return res.status(401).json({ success: false, message: "No token provided. Please log in." });
     }
 
-    try{
-            const decode = jwt.verify(token , process.env.SECERET_KEY) ; 
-            req.id = decode.id ; 
-            next() ; 
+    const token = authHeader.split(" ")[1];
+    const decoded = jwt.verify(token, process.env.SECERET_KEY);
+
+    req.userId = decoded.id;
+    req.userEmail = decoded.email;
+    next();
+  } catch (e) {
+    if (e.name === "TokenExpiredError") {
+      return res.status(401).json({ success: false, message: "Session expired. Please log in again." });
     }
-    catch(e){
-        console.log(e) ; 
-        return res.status(500).json({
-            success : false , 
-            message : "Invalid token" ,
-            error : "Invalid token"
-        })
-    }
-}
+    return res.status(401).json({ success: false, message: "Invalid token. Please log in." });
+  }
+};

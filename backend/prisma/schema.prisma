@@ -1,8 +1,5 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
-// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+// schema.prisma — complete updated schema
+// Run: npx prisma migrate dev --name add_comments_notifications_chat_activity
 
 generator client {
   provider = "prisma-client-js"
@@ -40,21 +37,38 @@ enum userRole {
   NONE
 }
 
+enum NotificationType {
+  COMMENT
+  TASK_ASSIGNED
+  TASK_COMPLETED
+  TASK_DUE
+  MEMBER_JOINED
+  MEMBER_REMOVED
+  ROLE_CHANGED
+  PROJECT_UPDATE
+  MENTION
+  FILE_UPLOADED
+}
+
 model User {
-  id             String            @id @default(uuid(7))
-  fullname       String            @default("asana")
-  email          String            @unique
-  password       String
-  profile        String            @default("https://plus.unsplash.com/premium_vector-1728553012443-3cf619e7579d?q=80&w=1480&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D")
-  isVerified     Boolean           @default(false)
-  OTP            Int               @default(0)
-  myRole         userRole          @default(NONE)
-  ownedProjects  Projects[]
-  assignedTask   Project_Tasks[] @relation("UserTasks")
-  filesUploaded ProjectFiles[]
-  createdTask Project_Tasks[]
-  createdSubTasks Project_SubTasks[]
-  createdAt      DateTime          @default(now())
+  id                String             @id @default(uuid(7))
+  fullname          String             @default("asana")
+  email             String             @unique
+  password          String
+  profile           String             @default("https://plus.unsplash.com/premium_vector-1728553012443-3cf619e7579d?q=80&w=1480&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D")
+  isVerified        Boolean            @default(false)
+  OTP               Int                @default(0)
+  myRole            userRole           @default(NONE)
+  ownedProjects     Projects[]
+  assignedTask      Project_Tasks[]    @relation("UserTasks")
+  filesUploaded     ProjectFiles[]
+  createdTask       Project_Tasks[]
+  createdSubTasks   Project_SubTasks[]
+  comments          TaskComment[]
+  notifications     Notification[]
+  activityLogs      ActivityLog[]
+  chatMessages      ChatMessage[]
+  createdAt         DateTime           @default(now())
 }
 
 model Projects {
@@ -66,8 +80,11 @@ model Projects {
   projectMembers Project_Members[]
   tasks          Project_Tasks[]
   views          ProjectViews[]
-  projectfiles ProjectFiles[]
-  subtasks Project_SubTasks[]
+  projectfiles   ProjectFiles[]
+  subtasks       Project_SubTasks[]
+  activityLogs   ActivityLog[]
+  chatMessages   ChatMessage[]
+  notifications  Notification[]
   createdAt      DateTime          @default(now())
 }
 
@@ -81,44 +98,47 @@ model Project_Members {
 }
 
 model Project_Tasks {
-  id             String             @id @default(uuid(7))
-  title          String             @db.Text
-  description    String             @db.Text
-  status         String
-  project_id     String
-  project        Projects           @relation(fields: [project_id], references: [id])
-  assignee_email String
-  assignee       User               @relation("UserTasks" ,fields: [assignee_email], references: [email])
-  mark_complete  Boolean            @default(false)
-  subTasks       Project_SubTasks[]
-  priority       Priority           @default(High)
-  startDate      DateTime           @default(now())
-  dueDate        DateTime           @default(now())
-  relatedFiles   ProjectFiles[]
+  id                      String             @id @default(uuid(7))
+  title                   String             @db.Text
+  description             String             @db.Text
+  status                  String
+  project_id              String
+  project                 Projects           @relation(fields: [project_id], references: [id])
+  assignee_email          String
+  assignee                User               @relation("UserTasks", fields: [assignee_email], references: [email])
+  mark_complete           Boolean            @default(false)
+  subTasks                Project_SubTasks[]
+  priority                Priority           @default(High)
+  startDate               DateTime           @default(now())
+  dueDate                 DateTime           @default(now())
+  relatedFiles            ProjectFiles[]
   project_task_creator_id String
-  creator User @relation(fields: [project_task_creator_id] ,references: [id])
-  time_TaskCompletion DateTime @default(now())
-  createdAt      DateTime           @default(now())
+  creator                 User               @relation(fields: [project_task_creator_id], references: [id])
+  time_TaskCompletion     DateTime           @default(now())
+  comments                TaskComment[]
+  activityLogs            ActivityLog[]
+  notifications           Notification[]
+  createdAt               DateTime           @default(now())
 }
 
 model Project_SubTasks {
-  id               String        @id @default(uuid(7))
-  title            String        @db.Text
-  description      String        @db.Text
-  status           String
-  priority         Priority      @default(High)
-  project_Tasks_id String
-  task_id          Project_Tasks @relation(fields: [project_Tasks_id], references: [id])
-  assignee_email   String
-  startDate        DateTime      @default(now())
-  dueDate          DateTime      @default(now())
-  projectId String
-  project_id Projects @relation(fields: [projectId] ,references: [id])
+  id                          String        @id @default(uuid(7))
+  title                       String        @db.Text
+  description                 String        @db.Text
+  status                      String
+  priority                    Priority      @default(High)
+  project_Tasks_id            String
+  task_id                     Project_Tasks @relation(fields: [project_Tasks_id], references: [id])
+  assignee_email              String
+  startDate                   DateTime      @default(now())
+  dueDate                     DateTime      @default(now())
+  projectId                   String
+  project_id                  Projects      @relation(fields: [projectId], references: [id])
   project_sub_task_creator_id String
-  creator User @relation(fields: [project_sub_task_creator_id] ,references: [id])
-  mark_complete    Boolean       @default(false)
-  time_SubTaskCompletion DateTime @default(now())
-  createdAt        DateTime      @default(now())
+  creator                     User          @relation(fields: [project_sub_task_creator_id], references: [id])
+  mark_complete               Boolean       @default(false)
+  time_SubTaskCompletion      DateTime      @default(now())
+  createdAt                   DateTime      @default(now())
 }
 
 model ProjectViews {
@@ -131,7 +151,7 @@ model ProjectViews {
   Timeline   Boolean  @default(false)
   Dashboard  Boolean  @default(false)
   Gantt      Boolean  @default(false)
-  Calendar    Boolean  @default(false)
+  Calendar   Boolean  @default(false)
   Note       Boolean  @default(false)
   Workload   Boolean  @default(false)
   Files      Boolean  @default(false)
@@ -139,13 +159,75 @@ model ProjectViews {
 }
 
 model ProjectFiles {
-  id         String        @id @default(uuid(7))
-  file       String
-  project_id String
-  projectid Projects @relation(fields: [project_id],references: [id])
-  task_id    String
-  taskid     Project_Tasks @relation(fields: [task_id], references: [id])
+  id          String        @id @default(uuid(7))
+  file        String
+  fileName    String        @default("") @db.Text
+  fileSize    Int?
+  fileType    String?
+  project_id  String
+  projectid   Projects      @relation(fields: [project_id], references: [id])
+  task_id     String
+  taskid      Project_Tasks @relation(fields: [task_id], references: [id])
   uploader_id String
-  uploaderid User @relation(fields: [uploader_id] ,references: [id])
-  uploadedAt        DateTime      @default(now()) 
+  uploaderid  User          @relation(fields: [uploader_id], references: [id])
+  uploadedAt  DateTime      @default(now())
+}
+
+// ─── NEW MODELS ──────────────────────────────────────────────────────────────
+
+model TaskComment {
+  id                String        @id @default(uuid(7))
+  content           String        @db.Text
+  task_id           String
+  task              Project_Tasks @relation(fields: [task_id], references: [id])
+  author_id         String
+  author            User          @relation(fields: [author_id], references: [id])
+  project_id        String
+  parent_comment_id String?
+  parentComment     TaskComment?  @relation("CommentReplies", fields: [parent_comment_id], references: [id])
+  replies           TaskComment[] @relation("CommentReplies")
+  isEdited          Boolean       @default(false)
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+}
+
+model Notification {
+  id         String           @id @default(uuid(7))
+  user_id    String
+  user       User             @relation(fields: [user_id], references: [id])
+  type       NotificationType
+  message    String           @db.Text
+  project_id String?
+  project    Projects?        @relation(fields: [project_id], references: [id])
+  task_id    String?
+  task       Project_Tasks?   @relation(fields: [task_id], references: [id])
+  isRead     Boolean          @default(false)
+  createdAt  DateTime         @default(now())
+}
+
+model ActivityLog {
+  id         String        @id @default(uuid(7))
+  user_id    String
+  user       User          @relation(fields: [user_id], references: [id])
+  project_id String
+  project    Projects      @relation(fields: [project_id], references: [id])
+  task_id    String?
+  task       Project_Tasks? @relation(fields: [task_id], references: [id])
+  action     String        // e.g. "TASK_CREATED", "STATUS_CHANGED", "MEMBER_INVITED"
+  meta       String?       @db.Text // JSON string with before/after or extra info
+  createdAt  DateTime      @default(now())
+}
+
+model ChatMessage {
+  id          String       @id @default(uuid(7))
+  project_id  String
+  project     Projects     @relation(fields: [project_id], references: [id])
+  sender_id   String
+  sender      User         @relation(fields: [sender_id], references: [id])
+  content     String       @db.Text
+  reply_to_id String?
+  replyTo     ChatMessage? @relation("MessageReplies", fields: [reply_to_id], references: [id])
+  replies     ChatMessage[] @relation("MessageReplies")
+  isEdited    Boolean      @default(false)
+  createdAt   DateTime     @default(now())
 }

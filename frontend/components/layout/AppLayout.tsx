@@ -2,22 +2,28 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
-import { useProjects } from "@/context/ProjectContext";
 import { SocketProvider } from "@/context/SocketContext";
 import Sidebar from "./Sidebar";
 import Topbar from "./Topbar";
 import SearchOverlay from "@/components/search/SearchOverlay";
 import { ToastContainer, Spinner } from "@/components/ui";
+import { api } from "@/lib/api";
 
 export default function AppLayout({ children }) {
   const { user, loading } = useAuth();
-  const { allProjects } = useProjects();
   const router = useRouter();
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
+  const [projects, setProjects] = useState([]);
 
   useEffect(() => {
-    if (!loading && !user) router.push("/auth/login");
+    if (!loading && !user) { router.push("/auth/login"); return; }
+    if (user?.id) {
+      api.projects.getAll(user.id).then((d) => {
+        const all = [...(d.OwnerProject || []), ...(d.MemberProject || [])];
+        setProjects(all);
+      }).catch(() => {});
+    }
   }, [user, loading, router]);
 
   // ⌘K shortcut
@@ -40,21 +46,19 @@ export default function AppLayout({ children }) {
 
   return (
     <SocketProvider userId={user.id}>
-      <div
-        className="flex h-screen bg-zinc-950 text-zinc-100 overflow-hidden"
-        style={{ fontFamily: "'DM Sans', system-ui, sans-serif" }}
-      >
+      <div className="flex h-screen bg-zinc-950 text-zinc-100 overflow-hidden" style={{ fontFamily: "'DM Sans', system-ui, sans-serif" }}>
         <style>{`
+          @import url('https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500;9..40,600;9..40,700&display=swap');
           *{box-sizing:border-box}
           ::-webkit-scrollbar{width:4px;height:4px}
           ::-webkit-scrollbar-track{background:transparent}
           ::-webkit-scrollbar-thumb{background:#3f3f46;border-radius:4px}
           ::-webkit-scrollbar-thumb:hover{background:#52525b}
           .-rotate-90{transform:rotate(-90deg)}
-          .rotate-180{transform:rotate(180deg)}
         `}</style>
 
         <Sidebar
+          projects={projects}
           collapsed={sidebarCollapsed}
           onToggle={() => setSidebarCollapsed((v) => !v)}
         />
@@ -70,7 +74,10 @@ export default function AppLayout({ children }) {
         </div>
 
         {searchOpen && (
-          <SearchOverlay projects={allProjects} onClose={() => setSearchOpen(false)} />
+          <SearchOverlay
+            projects={projects}
+            onClose={() => setSearchOpen(false)}
+          />
         )}
 
         <ToastContainer />

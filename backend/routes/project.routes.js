@@ -1,21 +1,48 @@
+// routes/project.routes.js
+// Mounted at: app.use("/api/v1", projectRoute)
+// All routes match what api.js calls exactly
+
 import express from "express";
+import {
+  createNewProject,
+  getAllProjectsOfUser,
+  getProjectById,
+  getAllMemberOfProject,
+  getViewsOfProject,
+  getCompleteDetailOfProject,
+  getProjectTimeline,
+  sendingInviteToAddMemberToProject,
+  updateRole,
+} from "../controllers/project.controllers.js";
 import { authMiddleware } from "../middlewares/auth.middleware.js";
-import { createNewProject, getAllMemberOfProject, getAllProjectsOfUser, getCompleteDetailOfProject, getProjectById, getProjectTimeline, getViewsOfProject, sendingInviteToAddMemberToProject, updateRole } from "../controllers/project.controllers.js";
 
-const router = express.Router() ;
+const router = express.Router();
 
-router.post('/:userid/project/new/create'  ,createNewProject) ;
-router.get('/:userid/allProject' ,getAllProjectsOfUser) ; 
-router.get('/:userId/project/:projectId/get'  ,getProjectById) ; 
-router.get('/:userId/project/:projectId/get/members' ,getAllMemberOfProject) ; 
+// POST   /api/v1/project/:userid           → create project
+router.post("/project/:userid", authMiddleware, createNewProject);
 
-router.post('/:userId/project/:projectId/addMember/sendInvite'  ,sendingInviteToAddMemberToProject) ; 
+// GET    /api/v1/projects/:userid          → get all projects of user
+router.get("/projects/:userid", authMiddleware, getAllProjectsOfUser);
 
-router.patch('/:userId/project/:projectId/update/role' ,updateRole) ; 
-router.get('/:userId/project/:projectId/get/views' ,getViewsOfProject) ; 
+// GET    /api/v1/project/:projectId        → get project by id
+router.get("/project/:projectId", authMiddleware, getProjectById);
 
-router.get('/:userId/project/:projectId/get/project/Timeline'  ,getProjectTimeline)
+// GET    /api/v1/project/:projectId/members
+router.get("/project/:projectId/members", authMiddleware, getAllMemberOfProject);
 
-router.get('/:userId/project/:projectId/get/complete/projectDetails'  ,getCompleteDetailOfProject) ; 
+// GET    /api/v1/project/:projectId/views
+router.get("/project/:projectId/views", authMiddleware, getViewsOfProject);
 
-export default router ; 
+// GET    /api/v1/project/:userId/:projectId/detail
+router.get("/project/:userId/:projectId/detail", authMiddleware, getCompleteDetailOfProject);
+
+// GET    /api/v1/project/:userId/:projectId/timeline
+router.get("/project/:userId/:projectId/timeline", authMiddleware, getProjectTimeline);
+
+// POST   /api/v1/project/:userId/:projectId/invite
+router.post("/project/:userId/:projectId/invite", authMiddleware, sendingInviteToAddMemberToProject);
+
+// PATCH  /api/v1/project/:projectId/role
+router.patch("/project/:projectId/role", authMiddleware, updateRole);
+
+export default router;

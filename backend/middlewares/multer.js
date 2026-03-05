@@ -1,27 +1,22 @@
-import multer from 'multer';
+import multer from "multer";
 
-// Use memory storage instead of disk storage
 const storage = multer.memoryStorage();
 
-// Add file filter for images, PDFs, and videos
-const fileFilter = (req, file, cb) => {
-    if (
-        file.mimetype.startsWith('image/') ||   // all image types
-        file.mimetype === 'application/pdf' || // pdf
-        file.mimetype.startsWith('video/')     // all video types
-    ) {
-        cb(null, true);
+const upload = multer({
+  storage,
+  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB max
+  fileFilter: (req, file, cb) => {
+    const allowed = ["image/jpeg", "image/png", "image/gif", "image/webp", "application/pdf",
+      "application/msword", "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      "application/vnd.ms-excel", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      "text/plain", "video/mp4", "video/quicktime",
+    ];
+    if (allowed.includes(file.mimetype)) {
+      cb(null, true);
     } else {
-        cb(new Error('Only image, PDF, or video files are allowed!'), false);
+      cb(new Error(`File type not allowed: ${file.mimetype}`));
     }
-};
-
-const upload = multer({ 
-    storage,
-    fileFilter,
-    limits: {
-        fileSize: 20 * 1024 * 1024 // 20MB limit (you can adjust if needed)
-    }
+  },
 });
 
-export default upload;
+export default upload ; 

@@ -1,11 +1,14 @@
+// routes/user.routes.js
 import express from "express";
-import { authMiddleware } from "../middlewares/auth.middleware.js";
-import { getAllProjectUserIsPartof, getUserDetails } from "../controllers/user.controllers.js";
+import { getUserById, getUserProjects } from "../controllers/user.controllers.js";
+import  {authMiddleware} from "../middlewares/auth.middleware.js";
 
-const router = express.Router() ; 
+const router = express.Router();
 
-router.get('/getuser/:id',getUserDetails) ;
+// GET /api/v1/user/:id
+router.get("/:id", authMiddleware , getUserById);
 
-router.get('/:userId/project' ,getAllProjectUserIsPartof)  ;
+// GET /api/v1/user/:userId/projects
+router.get("/:userId/projects", authMiddleware , getUserProjects);
 
-export default router ;
+export default router;
