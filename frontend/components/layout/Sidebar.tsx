@@ -102,7 +102,7 @@ export default function Sidebar({ collapsed, onToggle }) {
         </div>
         {!collapsed && (
           <>
-            <span className="text-sm font-bold text-white tracking-tight">Nexus</span>
+            <span className="text-sm font-bold text-white tracking-tight">Planzo</span>
             <button
               onClick={onToggle}
               className="ml-auto text-zinc-600 hover:text-zinc-400 transition-colors"

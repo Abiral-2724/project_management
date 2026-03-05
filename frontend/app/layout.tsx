@@ -1,9 +1,9 @@
 import { AuthProvider } from "@/context/AuthContext";
-import { ProjectProvider } from "@/context/ProjectContext";
+import { ProjectProvider } from ".././context/ProjectContext";
 import "./globals.css";
 
 export const metadata = {
-  title: "Nexus — Project Management",
+  title: "Planzo— Project Management",
   description: "Modern project management platform",
 };
 
