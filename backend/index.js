@@ -29,7 +29,7 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(
   cors({
-    origin: process.env.CLIENT_URL || "http://localhost:3000",
+    origin: "https://project-management-gold-phi.vercel.app" || "http://localhost:3000" ,
     credentials: true,
   })
 );
