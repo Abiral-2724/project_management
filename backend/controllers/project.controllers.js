@@ -427,7 +427,7 @@ export const sendingInviteToAddMemberToProject = async (req, res) => {
     }
 
     // ── Notifications ──────────────────────────────────────────────────────────
-    // const inviter = await client.user.findFirst({ where: { id: userId } });
+   // const inviter = await client.user.findFirst({ where: { id: userId } });
     for (const m of added) {
       // 1) Notify the newly added person themselves
       const newUser = await client.user.findFirst({ where: { email: m.emailuser } });
@@ -500,5 +500,183 @@ export const updateRole = async (req, res) => {
   } catch (e) {
     console.error("updateRole:", e);
     return res.status(500).json({ success: false, message: "Error updating role" });
+  }
+};
+
+// ─── SEND SMART DIGEST TO ALL PROJECT MEMBERS ────────────────────────────────
+// POST /api/v1/project/:userId/:projectId/send-digest
+// body: { digest: string, projectName: string }
+export const sendDigestToMembers = async (req, res) => {
+  try {
+    const { userId, projectId } = req.params;
+    const { digest, projectName } = req.body;
+
+    if (!digest?.trim()) {
+      return res.status(400).json({ success: false, message: "digest content is required" });
+    }
+
+    // Verify sender is a project member
+    const sender = await client.user.findFirst({ where: { id: userId } });
+    if (!sender) return res.status(404).json({ success: false, message: "User not found" });
+
+    const senderMembership = await client.project_Members.findFirst({
+      where: { projectId, emailuser: sender.email },
+    });
+    if (!senderMembership) {
+      return res.status(403).json({ success: false, message: "You are not a member of this project" });
+    }
+
+    // Get all project members with their emails
+    const members = await client.project_Members.findMany({ where: { projectId } });
+    if (!members.length) {
+      return res.status(404).json({ success: false, message: "No members found in this project" });
+    }
+
+    const project = await client.projects.findFirst({ where: { id: projectId } });
+    const displayProjectName = projectName || project?.projectName || "your project";
+
+    // Convert digest plain text → styled HTML bullet list
+    const digestToHtml = (text) => {
+      const emojiHeaders = ["🌅", "📌", "✅", "🎯"];
+      return text.split("\n").map((line) => {
+        if (!line.trim()) return "<div style=\"height:8px\"></div>";
+
+        if (emojiHeaders.some((e) => line.trimStart().startsWith(e))) {
+          const emoji = line.trim()[0];
+          const rest  = line.trim().slice(1).trim();
+          return `
+            <div style="display:flex;align-items:center;gap:10px;margin:24px 0 8px;padding-bottom:8px;border-bottom:1px solid #27272a">
+              <span style="font-size:18px;line-height:1">${emoji}</span>
+              <span style="color:#ffffff;font-size:13px;font-weight:700;letter-spacing:0.05em;text-transform:uppercase">${rest}</span>
+            </div>`;
+        }
+
+        if (line.trimStart().startsWith("•") || line.trimStart().startsWith("-")) {
+          const content = line.replace(/^[\s•\-]+/, "");
+          return `
+            <div style="display:flex;align-items:flex-start;gap:8px;padding:3px 0">
+              <span style="color:#8b5cf6;font-size:12px;margin-top:3px;flex-shrink:0">▸</span>
+              <span style="color:#a1a1aa;font-size:13px;line-height:1.6">${content}</span>
+            </div>`;
+        }
+
+        return `<p style="margin:4px 0;color:#71717a;font-size:13px;line-height:1.6">${line}</p>`;
+      }).join("");
+    };
+
+    const digestHtml = digestToHtml(digest);
+    const sentDate   = new Date().toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric" });
+
+    let sentCount = 0;
+    const errors  = [];
+
+    for (const member of members) {
+      try {
+        await transporter.sendMail({
+          from: `"Nexus" <${process.env.EMAIL_USER}>`,
+          to:   member.emailuser,
+          subject: `📋 Smart Digest — ${displayProjectName} · ${new Date().toLocaleDateString("en-US", { month: "short", day: "numeric" })}`,
+          html: `
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="margin:0;padding:0;background:#09090b;font-family:'Segoe UI',system-ui,-apple-system,sans-serif">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#09090b;padding:40px 20px">
+    <tr><td align="center">
+      <table width="520" cellpadding="0" cellspacing="0" style="background:#09090b;border:1px solid #27272a;border-radius:16px;overflow:hidden;max-width:520px">
+
+        <!-- Header -->
+        <tr>
+          <td style="padding:24px 32px;border-bottom:1px solid #18181b;background:#0a0a0b">
+            <table cellpadding="0" cellspacing="0" width="100%">
+              <tr>
+                <td>
+                  <table cellpadding="0" cellspacing="0">
+                    <tr>
+                      <td>
+                        <div style="width:32px;height:32px;background:#6366f1;border-radius:8px;text-align:center;line-height:32px;font-size:16px;display:inline-block">⚡</div>
+                      </td>
+                      <td style="padding-left:10px;vertical-align:middle">
+                        <span style="color:#ffffff;font-size:17px;font-weight:700;letter-spacing:-0.3px">Nexus</span>
+                      </td>
+                    </tr>
+                  </table>
+                </td>
+                <td align="right" style="vertical-align:middle">
+                  <span style="background:#6366f122;border:1px solid #6366f133;color:#818cf8;font-size:11px;font-weight:600;padding:4px 10px;border-radius:20px;letter-spacing:0.05em">✦ SMART DIGEST</span>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+
+        <!-- Project + date badge -->
+        <tr>
+          <td style="padding:28px 32px 0">
+            <div style="display:inline-flex;align-items:center;gap:8px;background:#18181b;border:1px solid #27272a;border-radius:8px;padding:8px 14px;margin-bottom:20px">
+              <div style="width:22px;height:22px;background:#6366f122;border:1px solid #6366f133;border-radius:5px;text-align:center;line-height:22px;font-size:11px;font-weight:700;color:#6366f1;display:inline-block">
+                ${displayProjectName[0].toUpperCase()}
+              </div>
+              <span style="color:#a1a1aa;font-size:13px;font-weight:600">${displayProjectName}</span>
+              <span style="color:#3f3f46;font-size:11px">·</span>
+              <span style="color:#52525b;font-size:12px">${sentDate}</span>
+            </div>
+            <p style="margin:0 0 6px;color:#fafafa;font-size:20px;font-weight:700;line-height:1.2">Your Daily Digest</p>
+            <p style="margin:0 0 24px;color:#52525b;font-size:13px">Sent by <strong style="color:#71717a">${sender.fullname || sender.email}</strong> · AI-generated summary</p>
+          </td>
+        </tr>
+
+        <!-- Digest content -->
+        <tr>
+          <td style="padding:0 32px 28px">
+            <div style="background:#0d0d0f;border:1px solid #1c1c1f;border-radius:12px;padding:20px 24px">
+              ${digestHtml}
+            </div>
+          </td>
+        </tr>
+
+        <!-- CTA -->
+        <tr>
+          <td style="padding:0 32px 28px;text-align:center">
+            <a href="${process.env.CLIENT_URL || "http://localhost:3000"}/project/${projectId}"
+               style="display:inline-block;background:#6366f1;color:#ffffff;font-size:13px;font-weight:600;padding:11px 24px;border-radius:10px;text-decoration:none;letter-spacing:0.2px">
+              Open Project in Nexus →
+            </a>
+          </td>
+        </tr>
+
+        <!-- Footer -->
+        <tr>
+          <td style="padding:18px 32px;border-top:1px solid #18181b">
+            <p style="margin:0;color:#3f3f46;font-size:11px;text-align:center;line-height:1.6">
+              This digest was generated by Gemini AI and sent by ${sender.fullname || sender.email} via Nexus.<br>
+              You received this because you are a member of <strong style="color:#52525b">${displayProjectName}</strong>.
+            </p>
+          </td>
+        </tr>
+
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>`,
+        });
+        sentCount++;
+      } catch (mailErr) {
+        console.warn(`Digest email to ${member.emailuser} failed:`, mailErr.message);
+        errors.push(member.emailuser);
+      }
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: `Digest sent to ${sentCount} member${sentCount !== 1 ? "s" : ""}${errors.length ? ` (${errors.length} failed)` : ""}`,
+      sentCount,
+      failedEmails: errors,
+    });
+
+  } catch (e) {
+    console.error("sendDigestToMembers:", e);
+    return res.status(500).json({ success: false, message: "Error sending digest" });
   }
 };

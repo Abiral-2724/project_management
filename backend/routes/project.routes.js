@@ -13,6 +13,7 @@ import {
   getProjectTimeline,
   sendingInviteToAddMemberToProject,
   updateRole,
+  sendDigestToMembers,
 } from "../controllers/project.controllers.js";
 import { authMiddleware } from "../middlewares/auth.middleware.js";
 
@@ -44,5 +45,7 @@ router.post("/project/:userId/:projectId/invite", authMiddleware, sendingInviteT
 
 // PATCH  /api/v1/project/:projectId/role
 router.patch("/project/:projectId/role", authMiddleware, updateRole);
+
+router.post("/project/:userId/:projectId/send-digest", authMiddleware, sendDigestToMembers);
 
 export default router;

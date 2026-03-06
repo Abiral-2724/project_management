@@ -56,10 +56,12 @@ export const addTasks = async (req, res) => {
       const { title, priority, startDate, dueDate, assigneEmail, status, description } = task;
 
       if (!title || !priority || !startDate || !dueDate || !assigneEmail || !status) {
-        return res.status(400).json({ success: false, message: "All task fields are required: title, priority, startDate, dueDate, assigneEmail, status" });
+        return res.status(400).json({
+          success: false,
+          message: "All task fields are required: title, priority, startDate, dueDate, assigneEmail, status",
+        });
       }
 
-      // Verify assignee is a project member
       const assigneeMember = await client.project_Members.findFirst({
         where: { projectId, emailuser: assigneEmail },
       });
@@ -82,7 +84,6 @@ export const addTasks = async (req, res) => {
       });
       createdTasks.push(newTask);
 
-      // Notify assignee (skip if assigning to yourself)
       if (assigneEmail !== user.email) {
         const assignee = await client.user.findFirst({ where: { email: assigneEmail } });
         if (assignee) {
@@ -97,9 +98,14 @@ export const addTasks = async (req, res) => {
       }
     }
 
-    // Activity log for each task created
     for (const task of createdTasks) {
-      await createActivityLog({ userId, projectId, taskId: task.id, action: "TASK_CREATED", meta: { taskTitle: task.title, assignee: task.assignee_email } });
+      await createActivityLog({
+        userId,
+        projectId,
+        taskId: task.id,
+        action: "TASK_CREATED",
+        meta: { taskTitle: task.title, assignee: task.assignee_email },
+      });
     }
 
     return res.status(201).json({ success: true, tasks: createdTasks });
@@ -138,12 +144,20 @@ export const addSubTasks = async (req, res) => {
       const { title, priority, startDate, dueDate, assigneEmail, status, description, taskId } = subtask;
 
       if (!title || !status || !priority || !assigneEmail || !startDate || !dueDate || !taskId) {
-        return res.status(400).json({ success: false, message: "All subtask fields are required: title, status, priority, assigneEmail, startDate, dueDate, taskId" });
+        return res.status(400).json({
+          success: false,
+          message: "All subtask fields are required: title, status, priority, assigneEmail, startDate, dueDate, taskId",
+        });
       }
 
-      const parentTask = await client.project_Tasks.findFirst({ where: { id: taskId, project_id: projectId } });
+      const parentTask = await client.project_Tasks.findFirst({
+        where: { id: taskId, project_id: projectId },
+      });
       if (!parentTask) {
-        return res.status(404).json({ success: false, message: `Parent task ${taskId} not found in this project` });
+        return res.status(404).json({
+          success: false,
+          message: `Parent task ${taskId} not found in this project`,
+        });
       }
 
       const newSubtask = await client.project_SubTasks.create({
@@ -160,7 +174,19 @@ export const addSubTasks = async (req, res) => {
           project_sub_task_creator_id: userId,
         },
       });
-      createdSubtasks.push(newSubtask);
+      // Attach parent title for activity log (not stored in DB)
+      createdSubtasks.push({ ...newSubtask, _parentTaskTitle: parentTask.title });
+    }
+
+    // ✅ Activity log for each subtask created
+    for (const sub of createdSubtasks) {
+      await createActivityLog({
+        userId,
+        projectId,
+        taskId: sub.project_Tasks_id,
+        action: "SUBTASK_CREATED",
+        meta: { subtaskTitle: sub.title, parentTask: sub._parentTaskTitle },
+      });
     }
 
     return res.status(201).json({ success: true, subtasks: createdSubtasks });
@@ -189,7 +215,6 @@ export const getmycreatedTask = async (req, res) => {
 export const getTaskAssignedoftheUser = async (req, res) => {
   try {
     const { userId } = req.params;
-
     const user = await client.user.findFirst({ where: { id: userId } });
     if (!user) return res.status(404).json({ success: false, message: "User not found" });
 
@@ -197,7 +222,6 @@ export const getTaskAssignedoftheUser = async (req, res) => {
       where: { assignee_email: user.email },
       orderBy: { createdAt: "desc" },
     });
-
     return res.status(200).json({ success: true, tasks });
   } catch (e) {
     console.error("getTaskAssignedoftheUser:", e);
@@ -206,7 +230,7 @@ export const getTaskAssignedoftheUser = async (req, res) => {
 };
 
 // ─── GET ALL TASKS WITH SUBTASKS ──────────────────────────────────────────────
-// BUG FIX: original used spread {...tasks, allSubtasksDestail} which puts object not array
+// Returns { TasksDetail[] } where each task has a `subtasks` array
 export const getalltaskswiththeirsubtasks = async (req, res) => {
   try {
     const { userId, projectId } = req.params;
@@ -261,7 +285,6 @@ export const markTaskComplete = async (req, res) => {
       },
     });
 
-    // When a task is marked COMPLETE (not un-complete), notify all project members
     if (updated.mark_complete === true) {
       const project = await client.projects.findFirst({ where: { id: projectId } });
       await notifyProjectMembers({
@@ -277,7 +300,7 @@ export const markTaskComplete = async (req, res) => {
       projectId,
       taskId,
       action: updated.mark_complete ? "TASK_COMPLETED" : "TASK_REOPENED",
-      meta: { taskTitle: updated.title }
+      meta: { taskTitle: updated.title },
     });
 
     return res.status(200).json({ success: true, message: "Task completion toggled", task: updated });
@@ -315,6 +338,15 @@ export const markSubTaskComplete = async (req, res) => {
       },
     });
 
+    // ✅ Activity log for subtask completion — logged against parent task
+    await createActivityLog({
+      userId,
+      projectId,
+      taskId: subtask.project_Tasks_id,
+      action: updated.mark_complete ? "SUBTASK_COMPLETED" : "SUBTASK_REOPENED",
+      meta: { subtaskTitle: updated.title },
+    });
+
     return res.status(200).json({ success: true, message: "Subtask completion toggled", subtask: updated });
   } catch (e) {
     console.error("markSubTaskComplete:", e);
@@ -350,20 +382,26 @@ export const editTasks = async (req, res) => {
       const updated = await client.project_Tasks.update({
         where: { id: taskId },
         data: {
-          ...(title !== undefined && { title }),
-          ...(description !== undefined && { description }),
-          ...(status !== undefined && { status }),
-          ...(priority !== undefined && { priority }),
+          ...(title        !== undefined && { title }),
+          ...(description  !== undefined && { description }),
+          ...(status       !== undefined && { status }),
+          ...(priority     !== undefined && { priority }),
           ...(assigneEmail !== undefined && { assignee_email: assigneEmail }),
-          ...(startDate !== undefined && { startDate: new Date(startDate) }),
-          ...(dueDate !== undefined && { dueDate: new Date(dueDate) }),
+          ...(startDate    !== undefined && { startDate: new Date(startDate) }),
+          ...(dueDate      !== undefined && { dueDate: new Date(dueDate) }),
         },
       });
       updatedTasks.push(updated);
     }
 
     for (const task of updatedTasks) {
-      await createActivityLog({ userId, projectId, taskId: task.id, action: "TASK_UPDATED", meta: { taskTitle: task.title } });
+      await createActivityLog({
+        userId,
+        projectId,
+        taskId: task.id,
+        action: "TASK_UPDATED",
+        meta: { taskTitle: task.title },
+      });
     }
 
     return res.status(200).json({ success: true, updatedTasks });
@@ -401,16 +439,27 @@ export const editsubTasks = async (req, res) => {
       const updated = await client.project_SubTasks.update({
         where: { id: subtaskId },
         data: {
-          ...(title !== undefined && { title }),
-          ...(description !== undefined && { description }),
-          ...(status !== undefined && { status }),
-          ...(priority !== undefined && { priority }),
+          ...(title        !== undefined && { title }),
+          ...(description  !== undefined && { description }),
+          ...(status       !== undefined && { status }),
+          ...(priority     !== undefined && { priority }),
           ...(assigneEmail !== undefined && { assignee_email: assigneEmail }),
-          ...(startDate !== undefined && { startDate: new Date(startDate) }),
-          ...(dueDate !== undefined && { dueDate: new Date(dueDate) }),
+          ...(startDate    !== undefined && { startDate: new Date(startDate) }),
+          ...(dueDate      !== undefined && { dueDate: new Date(dueDate) }),
         },
       });
       updatedSubTasks.push(updated);
+    }
+
+    // ✅ Activity log for subtask edits — logged against parent task
+    for (const sub of updatedSubTasks) {
+      await createActivityLog({
+        userId,
+        projectId,
+        taskId: sub.project_Tasks_id,
+        action: "SUBTASK_UPDATED",
+        meta: { subtaskTitle: sub.title },
+      });
     }
 
     return res.status(200).json({ success: true, updatedSubTasks });
@@ -425,70 +474,64 @@ export const projectDashboard = async (req, res) => {
   try {
     const { userId, projectId } = req.params;
 
-    const projectTasks = await client.project_Tasks.findMany({ where: { project_id: projectId } });
+    const projectTasks    = await client.project_Tasks.findMany({ where: { project_id: projectId } });
     const projectSubTasks = await client.project_SubTasks.findMany({ where: { projectId } });
 
-    const totalTask = projectTasks.length + projectSubTasks.length;
-    const completedTask = [...projectTasks, ...projectSubTasks].filter((t) => t.mark_complete).length;
+    const totalTask        = projectTasks.length + projectSubTasks.length;
+    const completedTask    = [...projectTasks, ...projectSubTasks].filter((t) => t.mark_complete).length;
     const notcompletedTask = totalTask - completedTask;
 
     let countHighPriority = 0, countMediumPriority = 0, countLowPriority = 0;
     const taskcompletionOvertime = [];
-    const assigneeMap = {}; // email → { email, fullname, profile, incompleteCount, completeCount }
-    const profileMap = {};
+    const assigneeMap = {};
+    const profileMap  = {};
 
     const allItems = [
-      ...projectTasks.map((t) => ({ ...t, _type: "task" })),
+      ...projectTasks.map((t)    => ({ ...t, _type: "task" })),
       ...projectSubTasks.map((t) => ({ ...t, _type: "subtask" })),
     ];
 
     for (const item of allItems) {
-      // Priority counts
-      if (item.priority === "High") countHighPriority++;
+      if (item.priority === "High")   countHighPriority++;
       if (item.priority === "Medium") countMediumPriority++;
-      if (item.priority === "Low") countLowPriority++;
+      if (item.priority === "Low")    countLowPriority++;
 
-      // Completion overtime
       taskcompletionOvertime.push({
-        complete: item.mark_complete,
+        complete:         item.mark_complete,
         timeofcompletion: item._type === "task" ? item.time_TaskCompletion : item.time_SubTaskCompletion,
       });
 
-      // Assignee breakdown
       const assigneeEmail = item.assignee_email;
       if (!assigneeMap[assigneeEmail]) {
-        const user = await client.user.findFirst({
-          where: { email: assigneeEmail },
+        const u = await client.user.findFirst({
+          where:  { email: assigneeEmail },
           select: { fullname: true, profile: true, email: true },
         });
         assigneeMap[assigneeEmail] = {
-          email: assigneeEmail,
-          fullname: user?.fullname || assigneeEmail,
-          profile: user?.profile || null,
+          email:           assigneeEmail,
+          fullname:        u?.fullname || assigneeEmail,
+          profile:         u?.profile  || null,
           incompleteCount: 0,
-          completeCount: 0,
+          completeCount:   0,
         };
-        profileMap[assigneeEmail] = user?.profile || null;
+        profileMap[assigneeEmail] = u?.profile || null;
       }
 
-      if (item.mark_complete) {
-        assigneeMap[assigneeEmail].completeCount++;
-      } else {
-        assigneeMap[assigneeEmail].incompleteCount++;
-      }
+      if (item.mark_complete) assigneeMap[assigneeEmail].completeCount++;
+      else                    assigneeMap[assigneeEmail].incompleteCount++;
     }
 
     return res.status(200).json({
-      success: true,
+      success:                   true,
       totalTask,
       completedTask,
       notcompletedTask,
-      taskcompletion: taskcompletionOvertime,
-      highPriority: countHighPriority,
-      mediumPriority: countMediumPriority,
-      lowPriority: countLowPriority,
+      taskcompletion:            taskcompletionOvertime,
+      highPriority:              countHighPriority,
+      mediumPriority:            countMediumPriority,
+      lowPriority:               countLowPriority,
       counttaskWithAssignEmails: Object.values(assigneeMap),
-      profile: profileMap,
+      profile:                   profileMap,
     });
   } catch (e) {
     console.error("projectDashboard:", e);

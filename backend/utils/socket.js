@@ -74,25 +74,65 @@ export const initializeSocket = (httpServer) => {
         const saved = await client.chatMessage.create({
           data: {
             project_id: projectId,
-            sender_id: userId,
-            content: message.trim(),
+            sender_id:  userId,
+            content:    message.trim(),
             reply_to_id: replyToId || null,
           },
         });
 
         const payload = {
-          id: saved.id,
+          id:            saved.id,
           projectId,
-          message: message.trim(),
-          senderId: userId,
-          senderName: socket.userFullname,
+          message:       message.trim(),
+          senderId:      userId,
+          senderName:    socket.userFullname,
           senderProfile: socket.userProfile,
-          replyToId: replyToId || null,
-          createdAt: saved.createdAt,
+          replyToId:     replyToId || null,
+          createdAt:     saved.createdAt,
         };
 
         // Broadcast to everyone in the project room (including sender)
         io.to(`project:${projectId}`).emit("receive_message", payload);
+
+        // ── @mention detection ──────────────────────────────────────────────
+        // Extract every @word from the message
+        const mentionHandles = [...message.matchAll(/@([\w.]+)/g)].map((m) => m[1].toLowerCase());
+        if (mentionHandles.length) {
+          // Fetch all project members once
+          const members = await client.project_Members.findMany({ where: { projectId } });
+
+          for (const handle of mentionHandles) {
+            // Match handle against member fullname or email prefix (case-insensitive)
+            const matched = members.find((m) => {
+              const emailPrefix = m.emailuser.split("@")[0].toLowerCase();
+              return emailPrefix.includes(handle) || handle.includes(emailPrefix);
+            });
+            if (!matched) continue;
+
+            // Find the user record for the matched member
+            const mentionedUser = await client.user.findFirst({
+              where: { email: matched.emailuser },
+            });
+            if (!mentionedUser || mentionedUser.id === userId) continue; // skip self-mentions
+
+            // Persist in-app notification
+            try {
+              const notif = await client.notification.create({
+                data: {
+                  user_id:    mentionedUser.id,
+                  type:       "MENTION",
+                  message:    `${socket.userFullname} mentioned you in project chat: "${message.trim().slice(0, 80)}${message.length > 80 ? "…" : ""}"`,
+                  project_id: projectId,
+                  task_id:    null,
+                },
+              });
+              // Push real-time notification to mentioned user's personal room
+              io.to(`user:${mentionedUser.id}`).emit("new_notification", notif);
+            } catch (notifErr) {
+              console.warn("mention notification error:", notifErr.message);
+            }
+          }
+        }
       } catch (err) {
         console.error("send_message error:", err);
         socket.emit("error", { message: "Failed to send message" });

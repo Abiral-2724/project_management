@@ -18,6 +18,7 @@ import chatRoute from "./routes/chat.routes.js";
 import searchRoute from "./routes/search.routes.js";
 
 import { initializeSocket } from "./utils/socket.js";
+import { startScheduler }   from "./scheduler.js";
 
 const client = new PrismaClient();
 const app = express();
@@ -29,7 +30,7 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(
   cors({
-    origin: "https://project-management-gold-phi.vercel.app" || "http://localhost:3000" ,
+    origin: process.env.CLIENT_URL || "http://localhost:3000",
     credentials: true,
   })
 );
@@ -58,4 +59,5 @@ export const io = initializeSocket(httpServer);
 httpServer.listen(PORT, () => {
   console.log(`Server running at port ${PORT}`);
   console.log(`WebSocket ready on port ${PORT}`);
+  startScheduler();
 });
