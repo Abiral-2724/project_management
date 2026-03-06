@@ -12,8 +12,9 @@
 //   app.use("/api/v1/chat",         chatRoute)
 //   app.use("/api/v1/search",       searchRoute)
 
-// const BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000/api/v1";
-const BASE_URL =  "https://planzo-project-management.onrender.com/api/v1";
+const BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000/api/v1";
+// const BASE_URL =  "https://planzo-project-management.onrender.com/api/v1";
+
 
 // ─── TOKEN HELPERS ──────────────────────────────────────────────────────────
 export const getToken = () =>
@@ -134,6 +135,10 @@ export const api = {
     // PATCH /project/:projectId/role            body: { email, newRole }
     updateRole: (projectId, email, newRole) =>
       request(`/project/${projectId}/role`, { method: "PATCH", body: JSON.stringify({ email, newRole }) }),
+
+    // POST  /project/:userId/:projectId/send-digest  body: { digest, projectName }
+    sendDigest: (userId, projectId, digest, projectName) =>
+      request(`/project/${userId}/${projectId}/send-digest`, { method: "POST", body: JSON.stringify({ digest, projectName }) }),
   },
 
   // ─── TASKS  →  /api/v1/task/* ────────────────────────────────────────────

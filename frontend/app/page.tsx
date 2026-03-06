@@ -8,6 +8,7 @@ import Sidebar from "../components/layout/Sidebar";
 import Topbar from "../components/layout/Topbar";
 import SearchOverlay from "@/components/search/SearchOverlay";
 import { ToastContainer, Spinner } from "@/components/ui";
+import Footer from "@/components/layout/Footer";
 
 export default function AppLayout({ children }) {
   const { user, loading } = useAuth();
@@ -75,6 +76,7 @@ export default function AppLayout({ children }) {
 
         <ToastContainer />
       </div>
+     
     </SocketProvider>
   );
 }

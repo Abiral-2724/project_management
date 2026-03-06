@@ -231,18 +231,22 @@ export const timeAgo = (d) => {
 export const actionLabel = (action, meta) => {
   const m = typeof meta === "string" ? JSON.parse(meta || "{}") : (meta || {});
   const map = {
-    TASK_CREATED:    `created task "${m.taskTitle || m.title || "a task"}"${m.assignee ? ` and assigned to ${m.assignee}` : ""}`,
-    TASK_COMPLETED:  `completed "${m.taskTitle || m.title || "a task"}"`,
-    TASK_REOPENED:   `reopened "${m.taskTitle || m.title || "a task"}"`,
-    TASK_UPDATED:    `updated task "${m.taskTitle || m.title || "a task"}"`,
-    STATUS_CHANGED:  `moved "${m.taskTitle || m.title}" to ${m.to}`,
-    MEMBER_ADDED:    `added ${m.email}${m.role ? ` as ${m.role}` : ""} to the project`,
-    MEMBER_INVITED:  `invited ${m.email}`,
-    MEMBER_REMOVED:  `removed ${m.email} from the project`,
-    ROLE_CHANGED:    `changed ${m.email}'s role to ${m.newRole || m.role}`,
-    FILE_UPLOADED:   `uploaded "${m.fileName || "a file"}"${m.taskTitle ? ` to task "${m.taskTitle}"` : ""}`,
-    PROJECT_CREATED: `created project "${m.projectName || ""}"`,
-    COMMENT:         `commented on "${m.taskTitle || m.title || "a task"}"`,
+    TASK_CREATED:      `created task "${m.taskTitle || m.title || "a task"}"${m.assignee ? ` and assigned to ${m.assignee}` : ""}`,
+    TASK_COMPLETED:    `completed "${m.taskTitle || m.title || "a task"}"`,
+    TASK_REOPENED:     `reopened "${m.taskTitle || m.title || "a task"}"`,
+    TASK_UPDATED:      `updated task "${m.taskTitle || m.title || "a task"}"`,
+    SUBTASK_CREATED:   `added subtask "${m.subtaskTitle || "a subtask"}"${m.parentTask ? ` to "${m.parentTask}"` : ""}`,
+    SUBTASK_COMPLETED: `completed subtask "${m.subtaskTitle || "a subtask"}"`,
+    SUBTASK_REOPENED:  `reopened subtask "${m.subtaskTitle || "a subtask"}"`,
+    SUBTASK_UPDATED:   `updated subtask "${m.subtaskTitle || "a subtask"}"`,
+    STATUS_CHANGED:    `moved "${m.taskTitle || m.title}" to ${m.to}`,
+    MEMBER_ADDED:      `added ${m.email}${m.role ? ` as ${m.role}` : ""} to the project`,
+    MEMBER_INVITED:    `invited ${m.email}`,
+    MEMBER_REMOVED:    `removed ${m.email} from the project`,
+    ROLE_CHANGED:      `changed ${m.email}'s role to ${m.newRole || m.role}`,
+    FILE_UPLOADED:     `uploaded "${m.fileName || "a file"}"${m.taskTitle ? ` to task "${m.taskTitle}"` : ""}`,
+    PROJECT_CREATED:   `created project "${m.projectName || ""}"`,
+    COMMENT:           `commented on "${m.taskTitle || m.title || "a task"}"`,
   };
   return map[action] || action?.toLowerCase().replace(/_/g, " ");
 };
