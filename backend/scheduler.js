@@ -242,7 +242,7 @@ async function runDueAlerts() {
       if (overdueList.length) {
         const { subject, html } = buildAlertEmail({ recipientEmail: email, userName, tasks: overdueList, isOverdue: true });
         try {
-          await transporter.sendMail({ from: `"Nexus" <${process.env.EMAIL_USER}>`, to: email, subject, html });
+          await transporter.sendMail({ from: `"Planzo" <planzo.dev@outlook.com>`, to: email, subject, html });
         } catch (mailErr) {
           console.warn(`[scheduler] Overdue email to ${email} failed:`, mailErr.message);
         }
@@ -252,7 +252,7 @@ async function runDueAlerts() {
       if (dueSoonList.length) {
         const { subject, html } = buildAlertEmail({ recipientEmail: email, userName, tasks: dueSoonList, isOverdue: false });
         try {
-          await transporter.sendMail({ from: `"Nexus" <${process.env.EMAIL_USER}>`, to: email, subject, html });
+          await transporter.sendMail({ from: `"Planzo" <planzo.dev@outlook.com>`, to: email, subject, html });
         } catch (mailErr) {
           console.warn(`[scheduler] Due-soon email to ${email} failed:`, mailErr.message);
         }

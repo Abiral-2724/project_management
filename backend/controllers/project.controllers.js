@@ -319,7 +319,7 @@ export const sendingInviteToAddMemberToProject = async (req, res) => {
       // Send invite email
       try {
         await transporter.sendMail({
-          from: `"Nexus" <${process.env.EMAIL_USER}>`,
+          from: `"Planzo" <planzo.dev@outlook.com>`,
           to: normalizedEmail,
           subject: `${inviter.fullname} invited you to ${project.projectName} on Nexus`,
           html: `
@@ -575,7 +575,7 @@ export const sendDigestToMembers = async (req, res) => {
     for (const member of members) {
       try {
         await transporter.sendMail({
-          from: `"Nexus" <${process.env.EMAIL_USER}>`,
+          from: `"Planzo" <planzo.dev@outlook.com>`,
           to:   member.emailuser,
           subject: `📋 Smart Digest — ${displayProjectName} · ${new Date().toLocaleDateString("en-US", { month: "short", day: "numeric" })}`,
           html: `

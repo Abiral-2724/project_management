@@ -21,7 +21,7 @@ const transporter = nodemailer.createTransport({
 
 const sendOtpEmail = async (email, otp, fullname = "") => {
   await transporter.sendMail({
-    from: `"Planzo" <${process.env.EMAIL_USER}>`,
+    from: `"Planzo" <planzo.dev@outlook.com>`,
     to: email,
     subject: "Verify your Planzo account",
     html: `
