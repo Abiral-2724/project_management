@@ -60,4 +60,18 @@ httpServer.listen(PORT, () => {
   console.log(`Server running at port ${PORT}`);
   console.log(`WebSocket ready on port ${PORT}`);
   startScheduler();
+
+  if (process.env.NODE_ENV === "production") {
+    const BACKEND_URL = "https://planzo-project-management.onrender.com"; // add this to Render env vars
+    if (BACKEND_URL) {
+      setInterval(async () => {
+        try {
+          await fetch(`${BACKEND_URL}/api/v1/health`);
+          console.log("[keep-alive] ping sent");
+        } catch (e) {
+          console.warn("[keep-alive] ping failed:", e.message);
+        }
+      }, 14 * 60 * 1000); // every 14 minutes
+    }
+  }
 });

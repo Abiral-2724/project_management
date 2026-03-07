@@ -32,9 +32,11 @@ async function notifyProjectMembers({ projectId, type, message, skipUserId = nul
 
 // ─── EMAIL TRANSPORTER ────────────────────────────────────────────────────────
 const transporter = nodemailer.createTransport({
-  service: "gmail",
+  host: "smtp-relay.brevo.com",
+  port: 587,
+  secure: false,
   auth: {
-    user: process.env.EMAIL_USER,
+    user: process.env.BREVO_USER,
     pass: process.env.EMAIL_PASS,
   },
 });

@@ -10,18 +10,20 @@ dotenv.config({});
 
 // ─── EMAIL TRANSPORTER ────────────────────────────────────────────────────────
 const transporter = nodemailer.createTransport({
-  service: "gmail",
+  host: "smtp-relay.brevo.com",
+  port: 587,
+  secure: false,
   auth: {
-    user: process.env.EMAIL_USER,
+    user: process.env.BREVO_USER,
     pass: process.env.EMAIL_PASS,
   },
 });
 
 const sendOtpEmail = async (email, otp, fullname = "") => {
   await transporter.sendMail({
-    from: `"Nexus" <${process.env.EMAIL_USER}>`,
+    from: `"Planzo" <${process.env.EMAIL_USER}>`,
     to: email,
-    subject: "Verify your Nexus account",
+    subject: "Verify your Planzo account",
     html: `
       <div style="font-family:sans-serif;max-width:480px;margin:auto;padding:32px;background:#09090b;border-radius:16px;border:1px solid #27272a">
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:24px">
@@ -57,7 +59,7 @@ export const registerUser = async (req, res) => {
       return res.status(400).json({ success: false, message: "Password must be at least 6 characters" });
     }
 
-    const hashedPassword = await bcrypt.hash(password, 12);
+    const hashedPassword = await bcrypt.hash(password, 10);
     const otp = Math.floor(100000 + Math.random() * 900000); // 6-digit OTP
 
     const user = await client.user.create({
