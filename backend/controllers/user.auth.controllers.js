@@ -1,44 +1,41 @@
 import client from "../prisma.js";
 import dotenv from "dotenv";
-
-
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
-import nodemailer from "nodemailer";
+import axios from "axios";
 import cloudinary from "../utils/cloudinary.js";
 dotenv.config({});
 
-// ─── EMAIL TRANSPORTER ────────────────────────────────────────────────────────
-const transporter = nodemailer.createTransport({
-  host: "smtp-relay.brevo.com",
-  port: 465,
-  secure: false,
-  auth: {
-    user: process.env.BREVO_USER,
-    pass: process.env.BREVO_PASS,
-  },
-});
-
+// ─── EMAIL via Brevo HTTP API (port 443 — works on Render free tier) ──────────
 const sendOtpEmail = async (email, otp, fullname = "") => {
-  await transporter.sendMail({
-    from: `"Planzo" <planzo.dev@outlook.com>`,
-    to: email,
-    subject: "Verify your Planzo account",
-    html: `
-      <div style="font-family:sans-serif;max-width:480px;margin:auto;padding:32px;background:#09090b;border-radius:16px;border:1px solid #27272a">
-        <div style="display:flex;align-items:center;gap:8px;margin-bottom:24px">
-          <div style="width:32px;height:32px;background:#6366f1;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:16px">⚡</div>
-          <span style="color:#fff;font-weight:700;font-size:18px">Nexus</span>
+  await axios.post(
+    "https://api.brevo.com/v3/smtp/email",
+    {
+      sender: { name: "Planzo", email: "planzo.dev@outlook.com" },
+      to: [{ email }],
+      subject: "Verify your Planzo account",
+      htmlContent: `
+        <div style="font-family:sans-serif;max-width:480px;margin:auto;padding:32px;background:#09090b;border-radius:16px;border:1px solid #27272a">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:24px">
+            <div style="width:32px;height:32px;background:#6366f1;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:16px">⚡</div>
+            <span style="color:#fff;font-weight:700;font-size:18px">Planzo</span>
+          </div>
+          <h2 style="color:#fafafa;margin:0 0 8px">Verify your email</h2>
+          <p style="color:#a1a1aa;margin:0 0 24px">Use the code below to verify your account${fullname ? `, ${fullname}` : ""}.</p>
+          <div style="background:#18181b;border:1px solid #27272a;border-radius:12px;padding:24px;text-align:center;margin-bottom:24px">
+            <span style="font-size:36px;font-weight:700;letter-spacing:12px;color:#6366f1">${otp}</span>
+          </div>
+          <p style="color:#71717a;font-size:13px;margin:0">This code expires in 10 minutes. If you didn't request this, ignore this email.</p>
         </div>
-        <h2 style="color:#fafafa;margin:0 0 8px">Verify your email</h2>
-        <p style="color:#a1a1aa;margin:0 0 24px">Use the code below to verify your account${fullname ? `, ${fullname}` : ""}.</p>
-        <div style="background:#18181b;border:1px solid #27272a;border-radius:12px;padding:24px;text-align:center;margin-bottom:24px">
-          <span style="font-size:36px;font-weight:700;letter-spacing:12px;color:#6366f1">${otp}</span>
-        </div>
-        <p style="color:#71717a;font-size:13px;margin:0">This code expires in 10 minutes. If you didn't request this, ignore this email.</p>
-      </div>
-    `,
-  });
+      `,
+    },
+    {
+      headers: {
+        "api-key": process.env.BREVO_API_KEY,
+        "Content-Type": "application/json",
+      },
+    }
+  );
 };
 
 // ─── REGISTER ─────────────────────────────────────────────────────────────────
@@ -60,7 +57,7 @@ export const registerUser = async (req, res) => {
     }
 
     const hashedPassword = await bcrypt.hash(password, 10);
-    const otp = Math.floor(100000 + Math.random() * 900000); // 6-digit OTP
+    const otp = Math.floor(100000 + Math.random() * 900000);
 
     const user = await client.user.create({
       data: {
@@ -71,12 +68,10 @@ export const registerUser = async (req, res) => {
       },
     });
 
-    // Send verification email
-    try {
-      await sendOtpEmail(user.email, otp);
-    } catch (mailErr) {
-      console.warn("Email send failed:", mailErr.message);
-    }
+    // ✅ Fire and forget — response goes back instantly
+    sendOtpEmail(user.email, otp).catch(err =>
+      console.warn("Email send failed:", err.message)
+    );
 
     const token = jwt.sign({ id: user.id, email: user.email }, process.env.SECERET_KEY, { expiresIn: "7d" });
 
@@ -144,8 +139,6 @@ export const loginUser = async (req, res) => {
 
 // ─── LOGOUT ───────────────────────────────────────────────────────────────────
 export const logoutUser = async (req, res) => {
-  // JWT is stateless — client removes the token.
-  // If you use a blocklist, add it here.
   return res.status(200).json({ success: true, message: "Logged out successfully" });
 };
 
@@ -201,11 +194,10 @@ export const resendOtp = async (req, res) => {
     const otp = Math.floor(100000 + Math.random() * 900000);
     await client.user.update({ where: { id }, data: { OTP: otp } });
 
-    try {
-      await sendOtpEmail(user.email, otp, user.fullname);
-    } catch (mailErr) {
-      console.warn("Email send failed:", mailErr.message);
-    }
+    // ✅ Fire and forget
+    sendOtpEmail(user.email, otp, user.fullname).catch(err =>
+      console.warn("Resend email failed:", err.message)
+    );
 
     return res.status(200).json({ success: true, message: "OTP resent successfully" });
   } catch (e) {
@@ -214,8 +206,7 @@ export const resendOtp = async (req, res) => {
   }
 };
 
-// ─── ACCOUNT SETUP ───────────────────────────────────────────────────────────
-// Called after verify — user uploads profile photo, sets name + role
+// ─── ACCOUNT SETUP ────────────────────────────────────────────────────────────
 export const accountSetup = async (req, res) => {
   try {
     const { id } = req.params;
@@ -232,7 +223,6 @@ export const accountSetup = async (req, res) => {
 
     let profileUrl = user.profile;
 
-    // Upload profile photo to Cloudinary if provided
     if (req.file) {
       try {
         const result = await cloudinary.uploader.upload(
@@ -241,7 +231,7 @@ export const accountSetup = async (req, res) => {
         );
         profileUrl = result.secure_url;
       } catch (cloudErr) {
-        console.warn("Cloudinary profile upload warning:", cloudErr.message);
+        console.warn("Cloudinary upload warning:", cloudErr.message);
       }
     }
 

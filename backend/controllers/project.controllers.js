@@ -1,6 +1,6 @@
 import client from "../prisma.js";
 import { z } from "zod";
-import nodemailer from "nodemailer";
+import axios from "axios";
 import { io } from "../index.js";
 import { createActivityLog } from "./activity.controllers.js";
 
@@ -16,7 +16,6 @@ async function pushNotification({ userId, type, message, projectId = null, taskI
   }
 }
 
-// Notify every member of a project (optionally skip one userId)
 async function notifyProjectMembers({ projectId, type, message, skipUserId = null }) {
   try {
     const members = await client.project_Members.findMany({ where: { projectId } });
@@ -30,16 +29,24 @@ async function notifyProjectMembers({ projectId, type, message, skipUserId = nul
   }
 }
 
-// ─── EMAIL TRANSPORTER ────────────────────────────────────────────────────────
-const transporter = nodemailer.createTransport({
-  host: "smtp-relay.brevo.com",
-  port: 465,
-  secure: false,
-  auth: {
-    user: process.env.BREVO_USER,
-    pass: process.env.BREVO_PASS,
-  },
-});
+// ─── EMAIL via Brevo HTTP API (port 443 — works on Render free tier) ──────────
+const sendEmail = async ({ to, subject, html }) => {
+  await axios.post(
+    "https://api.brevo.com/v3/smtp/email",
+    {
+      sender: { name: "Planzo", email: "planzo.dev@outlook.com" },
+      to: [{ email: to }],
+      subject,
+      htmlContent: html,
+    },
+    {
+      headers: {
+        "api-key": process.env.BREVO_API_KEY,
+        "Content-Type": "application/json",
+      },
+    }
+  );
+};
 
 // ─── CREATE PROJECT ──────────────────────────────────────────────────────────
 export const createNewProject = async (req, res) => {
@@ -68,9 +75,7 @@ export const createNewProject = async (req, res) => {
     const user = await client.user.findFirst({ where: { id: userid } });
     if (!user) return res.status(404).json({ success: false, message: "User not found" });
 
-    const oldProject = await client.projects.findFirst({
-      where: { ownerId: userid, projectName },
-    });
+    const oldProject = await client.projects.findFirst({ where: { ownerId: userid, projectName } });
     if (oldProject) {
       return res.status(409).json({ success: false, message: "You already have a project with this name" });
     }
@@ -79,18 +84,16 @@ export const createNewProject = async (req, res) => {
       data: { projectName, description, ownerId: userid },
     });
 
-    // Add owner as OWNER member
     await client.project_Members.create({
       data: { projectId: project.id, role: "OWNER", emailuser: user.email },
     });
 
-    // Create project views
     const updatedViews = await client.projectViews.create({
       data: {
         project_id: project.id,
         Overview:  views.includes("Overview"),
         Board:     views.includes("Board"),
-        List:      views.includes("List") || views.length === 0, // default List on
+        List:      views.includes("List") || views.length === 0,
         Timeline:  views.includes("Timeline"),
         Dashboard: views.includes("Dashboard"),
         Gantt:     views.includes("Gantt"),
@@ -112,7 +115,6 @@ export const createNewProject = async (req, res) => {
 };
 
 // ─── GET ALL PROJECTS OF USER ─────────────────────────────────────────────────
-// BUG FIX: original used async inside .map() which doesn't await — replaced with for...of
 export const getAllProjectsOfUser = async (req, res) => {
   try {
     const userid = req.params.userid;
@@ -121,21 +123,16 @@ export const getAllProjectsOfUser = async (req, res) => {
     const user = await client.user.findFirst({ where: { id: userid } });
     if (!user) return res.status(404).json({ success: false, message: "User not found" });
 
-    // Projects user OWNS
     const OwnerProject = await client.projects.findMany({
       where: { ownerId: userid },
       orderBy: { createdAt: "desc" },
     });
 
-    // Projects user is a MEMBER of (but doesn't own)
-    const memberships = await client.project_Members.findMany({
-      where: { emailuser: user.email },
-    });
+    const memberships = await client.project_Members.findMany({ where: { emailuser: user.email } });
 
-    // Filter out owned projects and fetch details
     const MemberProject = [];
     for (const m of memberships) {
-      if (OwnerProject.find((p) => p.id === m.projectId)) continue; // skip owned
+      if (OwnerProject.find((p) => p.id === m.projectId)) continue;
       const proj = await client.projects.findFirst({ where: { id: m.projectId } });
       if (proj) MemberProject.push(proj);
     }
@@ -194,7 +191,6 @@ export const getCompleteDetailOfProject = async (req, res) => {
 
     const members = await client.project_Members.findMany({ where: { projectId } });
 
-    // Enrich members with user details
     const projectMember = await Promise.all(
       members.map(async (m) => {
         const userDetail = await client.user.findFirst({
@@ -215,18 +211,11 @@ export const getCompleteDetailOfProject = async (req, res) => {
 
     const projectViews = await client.projectViews.findFirst({ where: { project_id: projectId } });
 
-    // Current user's role in project
     const currentUser = await client.user.findFirst({ where: { id: userId } });
     const currentMember = members.find((m) => m.emailuser === currentUser?.email);
     const userRole = currentMember?.role || "VIEWER";
 
-    return res.status(200).json({
-      success: true,
-      projectDetail,
-      projectMember,
-      projectViews,
-      userRole,
-    });
+    return res.status(200).json({ success: true, projectDetail, projectMember, projectViews, userRole });
   } catch (e) {
     console.error("getCompleteDetailOfProject:", e);
     return res.status(500).json({ success: false, message: "Error fetching project detail" });
@@ -273,7 +262,6 @@ export const sendingInviteToAddMemberToProject = async (req, res) => {
     const { userId, projectId } = req.params;
     const { inviteEmail, role } = req.body;
 
-    // Validate inputs
     if (!inviteEmail || !Array.isArray(inviteEmail) || inviteEmail.length === 0) {
       return res.status(400).json({ success: false, message: "inviteEmail array is required" });
     }
@@ -287,7 +275,6 @@ export const sendingInviteToAddMemberToProject = async (req, res) => {
     const project = await client.projects.findFirst({ where: { id: projectId } });
     if (!project) return res.status(404).json({ success: false, message: "Project not found" });
 
-    // Check inviter has permission
     const inviterMembership = await client.project_Members.findFirst({
       where: { projectId, emailuser: inviter.email },
     });
@@ -295,7 +282,6 @@ export const sendingInviteToAddMemberToProject = async (req, res) => {
       return res.status(403).json({ success: false, message: "Only OWNER or ADMIN can invite members" });
     }
 
-    // Check for duplicates before doing anything
     for (const email of inviteEmail) {
       const already = await client.project_Members.findFirst({
         where: { projectId, emailuser: email.toLowerCase() },
@@ -310,19 +296,16 @@ export const sendingInviteToAddMemberToProject = async (req, res) => {
     for (const email of inviteEmail) {
       const normalizedEmail = email.toLowerCase().trim();
 
-      // Add to project_Members
       const member = await client.project_Members.create({
         data: { projectId, role, emailuser: normalizedEmail },
       });
       added.push(member);
 
-      // Send invite email
-      try {
-        await transporter.sendMail({
-          from: `"Planzo" <planzo.dev@outlook.com>`,
-          to: normalizedEmail,
-          subject: `${inviter.fullname} invited you to ${project.projectName} on Nexus`,
-          html: `
+      // ✅ Fire and forget
+      sendEmail({
+        to: normalizedEmail,
+        subject: `${inviter.fullname} invited you to ${project.projectName} on Planzo`,
+        html: `
 <!DOCTYPE html>
 <html lang="en">
 <head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
@@ -330,108 +313,52 @@ export const sendingInviteToAddMemberToProject = async (req, res) => {
   <table width="100%" cellpadding="0" cellspacing="0" style="background:#09090b;padding:40px 20px">
     <tr><td align="center">
       <table width="480" cellpadding="0" cellspacing="0" style="background:#09090b;border:1px solid #27272a;border-radius:16px;overflow:hidden">
-
-        <!-- Header -->
         <tr>
           <td style="padding:28px 32px 24px;border-bottom:1px solid #18181b">
-            <table cellpadding="0" cellspacing="0">
-              <tr>
-                <td>
-                  <div style="width:32px;height:32px;background:#6366f1;border-radius:8px;display:inline-block;text-align:center;line-height:32px;font-size:16px">⚡</div>
-                </td>
-                <td style="padding-left:10px;vertical-align:middle">
-                  <span style="color:#ffffff;font-size:18px;font-weight:700;letter-spacing:-0.3px">Nexus</span>
-                </td>
-              </tr>
-            </table>
+            <div style="width:32px;height:32px;background:#6366f1;border-radius:8px;display:inline-block;text-align:center;line-height:32px;font-size:16px">⚡</div>
+            <span style="color:#ffffff;font-size:18px;font-weight:700;margin-left:10px;vertical-align:middle">Planzo</span>
           </td>
         </tr>
-
-        <!-- Inviter avatar + message -->
         <tr>
           <td style="padding:32px 32px 0">
-            <table cellpadding="0" cellspacing="0">
-              <tr>
-                <td>
-                  <div style="width:48px;height:48px;background:linear-gradient(135deg,#6366f1,#8b5cf6);border-radius:50%;text-align:center;line-height:48px;font-size:20px;font-weight:700;color:#fff;display:inline-block">
-                    ${(inviter.fullname || inviter.email)[0].toUpperCase()}
-                  </div>
-                </td>
-                <td style="padding-left:14px;vertical-align:middle">
-                  <p style="margin:0;color:#a1a1aa;font-size:13px">Invitation from</p>
-                  <p style="margin:2px 0 0;color:#ffffff;font-size:15px;font-weight:600">${inviter.fullname || inviter.email}</p>
-                </td>
-              </tr>
-            </table>
-
-            <h1 style="margin:24px 0 8px;color:#fafafa;font-size:22px;font-weight:700;line-height:1.3">
-              You've been invited to join a project
-            </h1>
+            <h1 style="margin:0 0 8px;color:#fafafa;font-size:22px;font-weight:700">You've been invited to join a project</h1>
             <p style="margin:0 0 24px;color:#71717a;font-size:14px;line-height:1.6">
-              <strong style="color:#a1a1aa">${inviter.fullname || inviter.email}</strong> has invited you to collaborate on <strong style="color:#a1a1aa">${project.projectName}</strong> with the role of <span style="color:#6366f1;font-weight:600">${role}</span>.
+              <strong style="color:#a1a1aa">${inviter.fullname || inviter.email}</strong> has invited you to collaborate on
+              <strong style="color:#a1a1aa">${project.projectName}</strong> with the role of
+              <span style="color:#6366f1;font-weight:600">${role}</span>.
             </p>
-          </td>
-        </tr>
-
-        <!-- Project card -->
-        <tr>
-          <td style="padding:0 32px 28px">
-            <div style="background:#18181b;border:1px solid #27272a;border-radius:12px;padding:20px">
-              <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px">
-                <div style="width:36px;height:36px;background:#6366f122;border:1px solid #6366f133;border-radius:8px;text-align:center;line-height:36px;font-size:15px;font-weight:700;color:#6366f1">
-                  ${project.projectName[0].toUpperCase()}
-                </div>
-                <div>
-                  <p style="margin:0;color:#fafafa;font-size:15px;font-weight:600">${project.projectName}</p>
-                  <p style="margin:2px 0 0;color:#71717a;font-size:12px">${project.description || "No description"}</p>
-                </div>
-              </div>
+            <div style="background:#18181b;border:1px solid #27272a;border-radius:12px;padding:20px;margin-bottom:24px">
+              <p style="margin:0;color:#fafafa;font-size:15px;font-weight:600">${project.projectName}</p>
+              <p style="margin:4px 0 0;color:#71717a;font-size:12px">${project.description || "No description"}</p>
               <p style="margin:12px 0 0;color:#52525b;font-size:12px;border-top:1px solid #27272a;padding-top:12px">
                 Your role: <span style="color:#6366f1;font-weight:600">${role}</span>
               </p>
             </div>
           </td>
         </tr>
-
-        <!-- CTA button -->
         <tr>
           <td style="padding:0 32px 32px;text-align:center">
-            <a href="${"https://project-management-gold-phi.vercel.app"}/auth/login"
-               style="display:inline-block;background:#6366f1;color:#ffffff;font-size:14px;font-weight:600;padding:13px 28px;border-radius:10px;text-decoration:none;letter-spacing:0.2px">
+            <a href="https://project-management-gold-phi.vercel.app/auth/login"
+               style="display:inline-block;background:#6366f1;color:#ffffff;font-size:14px;font-weight:600;padding:13px 28px;border-radius:10px;text-decoration:none">
               Accept Invitation →
             </a>
-            <p style="margin:16px 0 0;color:#52525b;font-size:12px">
-              Log in with <strong style="color:#71717a">${normalizedEmail}</strong> to access the project.
-            </p>
+            <p style="margin:16px 0 0;color:#52525b;font-size:12px">Log in with <strong style="color:#71717a">${normalizedEmail}</strong> to access the project.</p>
           </td>
         </tr>
-
-        <!-- Footer -->
         <tr>
           <td style="padding:20px 32px;border-top:1px solid #18181b">
-            <p style="margin:0;color:#3f3f46;font-size:11px;text-align:center">
-              You received this because you were invited to Nexus. If you weren't expecting this, you can ignore it.
-            </p>
+            <p style="margin:0;color:#3f3f46;font-size:11px;text-align:center">You received this because you were invited to Planzo. If you weren't expecting this, ignore it.</p>
           </td>
         </tr>
-
       </table>
     </td></tr>
   </table>
 </body>
-</html>
-          `,
-        });
-      } catch (mailErr) {
-        console.warn(`Email to ${normalizedEmail} failed:`, mailErr.message);
-        // Don't fail the request — member was already added
-      }
+</html>`,
+      }).catch(err => console.warn(`Invite email to ${normalizedEmail} failed:`, err.message));
     }
 
-    // ── Notifications ──────────────────────────────────────────────────────────
-   // const inviter = await client.user.findFirst({ where: { id: userId } });
     for (const m of added) {
-      // 1) Notify the newly added person themselves
       const newUser = await client.user.findFirst({ where: { email: m.emailuser } });
       if (newUser) {
         await pushNotification({
@@ -442,21 +369,20 @@ export const sendingInviteToAddMemberToProject = async (req, res) => {
         });
       }
     }
-    // 2) Notify all existing members that someone new joined
+
     await notifyProjectMembers({
       projectId,
       type: "MEMBER_JOINED",
       message: `${added.map((m) => m.emailuser).join(", ")} joined "${project.projectName}"`,
-      skipUserId: userId, // don't notify the person who did the inviting
+      skipUserId: userId,
     });
 
-    // Activity log — one entry per added member
     for (const m of added) {
       await createActivityLog({
         userId,
         projectId,
         action: "MEMBER_ADDED",
-        meta: { email: m.emailuser, role: m.role }
+        meta: { email: m.emailuser, role: m.role },
       });
     }
 
@@ -486,9 +412,7 @@ export const updateRole = async (req, res) => {
       return res.status(400).json({ success: false, message: `Invalid role. Must be one of: ${validRoles.join(", ")}` });
     }
 
-    const membership = await client.project_Members.findFirst({
-      where: { projectId, emailuser: email },
-    });
+    const membership = await client.project_Members.findFirst({ where: { projectId, emailuser: email } });
     if (!membership) {
       return res.status(404).json({ success: false, message: `${email} is not a member of this project` });
     }
@@ -505,9 +429,7 @@ export const updateRole = async (req, res) => {
   }
 };
 
-// ─── SEND SMART DIGEST TO ALL PROJECT MEMBERS ────────────────────────────────
-// POST /api/v1/project/:userId/:projectId/send-digest
-// body: { digest: string, projectName: string }
+// ─── SEND SMART DIGEST ────────────────────────────────────────────────────────
 export const sendDigestToMembers = async (req, res) => {
   try {
     const { userId, projectId } = req.params;
@@ -517,18 +439,14 @@ export const sendDigestToMembers = async (req, res) => {
       return res.status(400).json({ success: false, message: "digest content is required" });
     }
 
-    // Verify sender is a project member
     const sender = await client.user.findFirst({ where: { id: userId } });
     if (!sender) return res.status(404).json({ success: false, message: "User not found" });
 
-    const senderMembership = await client.project_Members.findFirst({
-      where: { projectId, emailuser: sender.email },
-    });
+    const senderMembership = await client.project_Members.findFirst({ where: { projectId, emailuser: sender.email } });
     if (!senderMembership) {
       return res.status(403).json({ success: false, message: "You are not a member of this project" });
     }
 
-    // Get all project members with their emails
     const members = await client.project_Members.findMany({ where: { projectId } });
     if (!members.length) {
       return res.status(404).json({ success: false, message: "No members found in this project" });
@@ -537,98 +455,69 @@ export const sendDigestToMembers = async (req, res) => {
     const project = await client.projects.findFirst({ where: { id: projectId } });
     const displayProjectName = projectName || project?.projectName || "your project";
 
-    // Convert digest plain text → styled HTML bullet list
     const digestToHtml = (text) => {
       const emojiHeaders = ["🌅", "📌", "✅", "🎯"];
       return text.split("\n").map((line) => {
         if (!line.trim()) return "<div style=\"height:8px\"></div>";
-
         if (emojiHeaders.some((e) => line.trimStart().startsWith(e))) {
           const emoji = line.trim()[0];
           const rest  = line.trim().slice(1).trim();
-          return `
-            <div style="display:flex;align-items:center;gap:10px;margin:24px 0 8px;padding-bottom:8px;border-bottom:1px solid #27272a">
-              <span style="font-size:18px;line-height:1">${emoji}</span>
-              <span style="color:#ffffff;font-size:13px;font-weight:700;letter-spacing:0.05em;text-transform:uppercase">${rest}</span>
-            </div>`;
+          return `<div style="display:flex;align-items:center;gap:10px;margin:24px 0 8px;padding-bottom:8px;border-bottom:1px solid #27272a">
+            <span style="font-size:18px">${emoji}</span>
+            <span style="color:#ffffff;font-size:13px;font-weight:700;text-transform:uppercase">${rest}</span>
+          </div>`;
         }
-
         if (line.trimStart().startsWith("•") || line.trimStart().startsWith("-")) {
           const content = line.replace(/^[\s•\-]+/, "");
-          return `
-            <div style="display:flex;align-items:flex-start;gap:8px;padding:3px 0">
-              <span style="color:#8b5cf6;font-size:12px;margin-top:3px;flex-shrink:0">▸</span>
-              <span style="color:#a1a1aa;font-size:13px;line-height:1.6">${content}</span>
-            </div>`;
+          return `<div style="display:flex;align-items:flex-start;gap:8px;padding:3px 0">
+            <span style="color:#8b5cf6;font-size:12px;margin-top:3px">▸</span>
+            <span style="color:#a1a1aa;font-size:13px;line-height:1.6">${content}</span>
+          </div>`;
         }
-
         return `<p style="margin:4px 0;color:#71717a;font-size:13px;line-height:1.6">${line}</p>`;
       }).join("");
     };
 
     const digestHtml = digestToHtml(digest);
-    const sentDate   = new Date().toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric" });
+    const sentDate = new Date().toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric" });
 
     let sentCount = 0;
-    const errors  = [];
+    const errors = [];
 
     for (const member of members) {
       try {
-        await transporter.sendMail({
-          from: `"Planzo" <planzo.dev@outlook.com>`,
-          to:   member.emailuser,
+        await sendEmail({
+          to: member.emailuser,
           subject: `📋 Smart Digest — ${displayProjectName} · ${new Date().toLocaleDateString("en-US", { month: "short", day: "numeric" })}`,
           html: `
 <!DOCTYPE html>
 <html lang="en">
 <head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
-<body style="margin:0;padding:0;background:#09090b;font-family:'Segoe UI',system-ui,-apple-system,sans-serif">
+<body style="margin:0;padding:0;background:#09090b;font-family:'Segoe UI',system-ui,sans-serif">
   <table width="100%" cellpadding="0" cellspacing="0" style="background:#09090b;padding:40px 20px">
     <tr><td align="center">
       <table width="520" cellpadding="0" cellspacing="0" style="background:#09090b;border:1px solid #27272a;border-radius:16px;overflow:hidden;max-width:520px">
-
-        <!-- Header -->
         <tr>
           <td style="padding:24px 32px;border-bottom:1px solid #18181b;background:#0a0a0b">
             <table cellpadding="0" cellspacing="0" width="100%">
               <tr>
                 <td>
-                  <table cellpadding="0" cellspacing="0">
-                    <tr>
-                      <td>
-                        <div style="width:32px;height:32px;background:#6366f1;border-radius:8px;text-align:center;line-height:32px;font-size:16px;display:inline-block">⚡</div>
-                      </td>
-                      <td style="padding-left:10px;vertical-align:middle">
-                        <span style="color:#ffffff;font-size:17px;font-weight:700;letter-spacing:-0.3px">Nexus</span>
-                      </td>
-                    </tr>
-                  </table>
+                  <div style="width:32px;height:32px;background:#6366f1;border-radius:8px;text-align:center;line-height:32px;font-size:16px;display:inline-block">⚡</div>
+                  <span style="color:#ffffff;font-size:17px;font-weight:700;margin-left:10px;vertical-align:middle">Planzo</span>
                 </td>
-                <td align="right" style="vertical-align:middle">
-                  <span style="background:#6366f122;border:1px solid #6366f133;color:#818cf8;font-size:11px;font-weight:600;padding:4px 10px;border-radius:20px;letter-spacing:0.05em">✦ SMART DIGEST</span>
+                <td align="right">
+                  <span style="background:#6366f122;border:1px solid #6366f133;color:#818cf8;font-size:11px;font-weight:600;padding:4px 10px;border-radius:20px">✦ SMART DIGEST</span>
                 </td>
               </tr>
             </table>
           </td>
         </tr>
-
-        <!-- Project + date badge -->
         <tr>
           <td style="padding:28px 32px 0">
-            <div style="display:inline-flex;align-items:center;gap:8px;background:#18181b;border:1px solid #27272a;border-radius:8px;padding:8px 14px;margin-bottom:20px">
-              <div style="width:22px;height:22px;background:#6366f122;border:1px solid #6366f133;border-radius:5px;text-align:center;line-height:22px;font-size:11px;font-weight:700;color:#6366f1;display:inline-block">
-                ${displayProjectName[0].toUpperCase()}
-              </div>
-              <span style="color:#a1a1aa;font-size:13px;font-weight:600">${displayProjectName}</span>
-              <span style="color:#3f3f46;font-size:11px">·</span>
-              <span style="color:#52525b;font-size:12px">${sentDate}</span>
-            </div>
-            <p style="margin:0 0 6px;color:#fafafa;font-size:20px;font-weight:700;line-height:1.2">Your Daily Digest</p>
-            <p style="margin:0 0 24px;color:#52525b;font-size:13px">Sent by <strong style="color:#71717a">${sender.fullname || sender.email}</strong> · AI-generated summary</p>
+            <p style="margin:0 0 6px;color:#fafafa;font-size:20px;font-weight:700">${displayProjectName} — Daily Digest</p>
+            <p style="margin:0 0 24px;color:#52525b;font-size:13px">${sentDate} · Sent by <strong style="color:#71717a">${sender.fullname || sender.email}</strong></p>
           </td>
         </tr>
-
-        <!-- Digest content -->
         <tr>
           <td style="padding:0 32px 28px">
             <div style="background:#0d0d0f;border:1px solid #1c1c1f;border-radius:12px;padding:20px 24px">
@@ -636,27 +525,21 @@ export const sendDigestToMembers = async (req, res) => {
             </div>
           </td>
         </tr>
-
-        <!-- CTA -->
         <tr>
           <td style="padding:0 32px 28px;text-align:center">
-            <a href="${"https://project-management-gold-phi.vercel.app"}/project/${projectId}"
-               style="display:inline-block;background:#6366f1;color:#ffffff;font-size:13px;font-weight:600;padding:11px 24px;border-radius:10px;text-decoration:none;letter-spacing:0.2px">
-              Open Project in Nexus →
+            <a href="https://project-management-gold-phi.vercel.app/project/${projectId}"
+               style="display:inline-block;background:#6366f1;color:#ffffff;font-size:13px;font-weight:600;padding:11px 24px;border-radius:10px;text-decoration:none">
+              Open Project →
             </a>
           </td>
         </tr>
-
-        <!-- Footer -->
         <tr>
           <td style="padding:18px 32px;border-top:1px solid #18181b">
-            <p style="margin:0;color:#3f3f46;font-size:11px;text-align:center;line-height:1.6">
-              This digest was generated by Gemini AI and sent by ${sender.fullname || sender.email} via Nexus.<br>
+            <p style="margin:0;color:#3f3f46;font-size:11px;text-align:center">
               You received this because you are a member of <strong style="color:#52525b">${displayProjectName}</strong>.
             </p>
           </td>
         </tr>
-
       </table>
     </td></tr>
   </table>
@@ -676,7 +559,6 @@ export const sendDigestToMembers = async (req, res) => {
       sentCount,
       failedEmails: errors,
     });
-
   } catch (e) {
     console.error("sendDigestToMembers:", e);
     return res.status(500).json({ success: false, message: "Error sending digest" });
