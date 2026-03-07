@@ -122,7 +122,7 @@ function buildAlertEmail({ recipientEmail, userName, tasks, isOverdue }) {
         <!-- CTA -->
         <tr>
           <td style="padding:24px 32px;text-align:center">
-            <a href="${process.env.CLIENT_URL || "http://localhost:3000"}"
+            <a href="${"https://project-management-gold-phi.vercel.app"}"
               style="display:inline-block;background:#6366f1;color:#fff;font-size:13px;
                 font-weight:600;padding:11px 24px;border-radius:10px;text-decoration:none">
               Open Nexus →

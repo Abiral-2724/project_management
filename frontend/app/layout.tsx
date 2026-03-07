@@ -5,6 +5,9 @@ import "./globals.css";
 export const metadata = {
   title: "Planzo— Project Management",
   description: "Modern project management platform",
+  icons: {
+    icon: "/favicon.svg",
+  },
 };
 
 export default function RootLayout({ children }) {

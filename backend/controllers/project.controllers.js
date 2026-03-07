@@ -394,7 +394,7 @@ export const sendingInviteToAddMemberToProject = async (req, res) => {
         <!-- CTA button -->
         <tr>
           <td style="padding:0 32px 32px;text-align:center">
-            <a href="${process.env.CLIENT_URL || "http://localhost:3000"}/auth/login"
+            <a href="${"https://project-management-gold-phi.vercel.app"}/auth/login"
                style="display:inline-block;background:#6366f1;color:#ffffff;font-size:14px;font-weight:600;padding:13px 28px;border-radius:10px;text-decoration:none;letter-spacing:0.2px">
               Accept Invitation →
             </a>
@@ -638,7 +638,7 @@ export const sendDigestToMembers = async (req, res) => {
         <!-- CTA -->
         <tr>
           <td style="padding:0 32px 28px;text-align:center">
-            <a href="${process.env.CLIENT_URL || "http://localhost:3000"}/project/${projectId}"
+            <a href="${"https://project-management-gold-phi.vercel.app"}/project/${projectId}"
                style="display:inline-block;background:#6366f1;color:#ffffff;font-size:13px;font-weight:600;padding:11px 24px;border-radius:10px;text-decoration:none;letter-spacing:0.2px">
               Open Project in Nexus →
             </a>
