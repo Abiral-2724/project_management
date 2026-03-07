@@ -179,7 +179,7 @@ export default function LoginPage() {
             </button>
           </form>
 
-          <div className="flex items-center gap-3 my-5">
+          {/* <div className="flex items-center gap-3 my-5">
             <div className="flex-1 h-px" style={{background:"rgba(255,255,255,.05)"}}/>
             <span className="text-[11px] text-zinc-700 uppercase tracking-widest">or</span>
             <div className="flex-1 h-px" style={{background:"rgba(255,255,255,.05)"}}/>
@@ -187,7 +187,7 @@ export default function LoginPage() {
 
           <button className="w-full flex items-center justify-center gap-2.5 py-3 rounded-xl text-[13.5px] font-medium text-zinc-400 transition-all hover:text-zinc-200 hover:bg-white/5" style={{background:"rgba(255,255,255,.03)",border:"1px solid rgba(255,255,255,.08)"}}>
             <GoogleIcon/> Sign in with Google
-          </button>
+          </button> */}
 
           <p className="text-center text-[13px] text-zinc-600 mt-6">
             Don't have an account?{" "}

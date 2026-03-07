@@ -208,7 +208,7 @@ export default function RegisterPage() {
             </button>
           </form>
 
-          <div className="flex items-center gap-3 my-5">
+          {/* <div className="flex items-center gap-3 my-5">
             <div className="flex-1 h-px" style={{background:"rgba(255,255,255,.05)"}}/>
             <span className="text-[11px] text-zinc-700 uppercase tracking-widest">or sign up with</span>
             <div className="flex-1 h-px" style={{background:"rgba(255,255,255,.05)"}}/>
@@ -216,7 +216,7 @@ export default function RegisterPage() {
 
           <button className="w-full flex items-center justify-center gap-2.5 py-3 rounded-xl text-[13.5px] font-medium text-zinc-400 transition-all hover:text-zinc-200 hover:bg-white/5" style={{background:"rgba(255,255,255,.03)",border:"1px solid rgba(255,255,255,.08)"}}>
             <GoogleIcon/> Continue with Google
-          </button>
+          </button> */}
 
           <p className="text-center text-[11.5px] text-zinc-700 mt-5 leading-relaxed">
             By creating an account you agree to our{" "}
