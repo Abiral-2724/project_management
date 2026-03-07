@@ -17,7 +17,7 @@ export function SocketProvider({ children, userId }) {
 
     // Dynamic import to avoid SSR issues
     import("socket.io-client").then(({ io }) => {
-      const socket = io(process.env.NEXT_PUBLIC_SOCKET_URL || "http://localhost:4000", {
+      const socket = io("https://planzo-project-management.onrender.com", {
         auth: { token },
         transports: ["websocket", "polling"],
       });
