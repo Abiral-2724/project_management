@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect, useRef, useCallback } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useParams } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { useSocket } from "@/context/SocketContext";
@@ -18,713 +18,701 @@ import {
   formatDate, timeAgo, getProjectColor,
   priorityVariant, statusVariant, actionLabel,
 } from "@/components/ui";
+import {
+  Sparkles, LayoutGrid, List, BarChart2, Users, MessageSquare,
+  Paperclip, Activity, GitBranch, FileText, Plus, ChevronRight,
+  AlertTriangle, Clock, CheckCircle2, Circle, Send, X, Loader2,
+  TrendingUp, Zap, Target, Edit3, Eye, GripVertical, RefreshCw,
+  Check, ArrowRight, Upload, Trash2, MoreHorizontal, Search,
+} from "lucide-react";
 
-// ─── OVERDUE / DUE-SOON HELPERS ──────────────────────────────────────────────
-const dayStart  = (d) => new Date(new Date(d).setHours(0, 0, 0, 0));
-const isOverdue = (task) => !task.mark_complete && task.dueDate && dayStart(task.dueDate) < dayStart(new Date());
-const isDueSoon = (task) => {
-  if (task.mark_complete || !task.dueDate) return false;
-  const due   = dayStart(task.dueDate);
-  const today = dayStart(new Date());
-  const diff  = (due - today) / (1000 * 60 * 60 * 24);
-  return diff >= 0 && diff <= 1;
+const FONT = "'Outfit', sans-serif";
+
+/* ─── helpers ─────────────────────────────────────────────────────────────── */
+const dayStart  = d => new Date(new Date(d).setHours(0,0,0,0));
+const isOverdue = t => !t.mark_complete && t.dueDate && dayStart(t.dueDate) < dayStart(new Date());
+const isDueSoon = t => {
+  if (t.mark_complete||!t.dueDate) return false;
+  const diff = (dayStart(t.dueDate)-dayStart(new Date()))/(864e5);
+  return diff>=0&&diff<=1;
 };
-const dueDateStyle = (task) => {
-  if (isOverdue(task)) return "text-red-400 font-semibold";
-  if (isDueSoon(task)) return "text-amber-400 font-semibold";
-  return "text-zinc-600";
-};
-const dueDateLabel = (task) => {
-  if (!task.dueDate) return "";
-  if (isOverdue(task)) return `⚠ ${formatDate(task.dueDate)}`;
-  if (isDueSoon(task)) return `🕐 ${formatDate(task.dueDate)}`;
-  return formatDate(task.dueDate);
+const dueCls   = t => isOverdue(t)?"text-red-400 font-semibold":isDueSoon(t)?"text-amber-400 font-semibold":"text-zinc-600";
+const dueLabel = t => {
+  if (!t.dueDate) return "";
+  if (isOverdue(t)) return `⚠ ${formatDate(t.dueDate)}`;
+  if (isDueSoon(t)) return `🕐 ${formatDate(t.dueDate)}`;
+  return formatDate(t.dueDate);
 };
 
-// ─── SHARED AI SPARKLE ICON ───────────────────────────────────────────────────
-const Sparkle = ({ size = 12 }) => (
-  <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor">
-    <path d="M12 2l2.4 7.4H22l-6.2 4.5 2.4 7.4L12 17l-6.2 4.3 2.4-7.4L2 9.4h7.6L12 2z"/>
-  </svg>
-);
+const PCOL = { High:"#ef4444", Medium:"#f59e0b", Low:"#10b981" };
+const SCOL = { "Todo":"#71717a","In Progress":"#3b82f6","In Review":"#8b5cf6","Done":"#10b981" };
 
-// Shared AI result panel used across features
-function AiPanel({ title, content, onClose, loading }) {
+/* ─── shared atoms ────────────────────────────────────────────────────────── */
+function SectionHeader({ title, count, action }) {
   return (
-    <div className="rounded-xl border border-violet-500/25 bg-gradient-to-br from-violet-950/50 to-indigo-950/50 overflow-hidden">
-      <div className="flex items-center gap-2 px-4 py-3 border-b border-violet-500/20">
-        <span className="text-violet-400"><Sparkle /></span>
-        <span className="text-xs font-semibold text-violet-300 tracking-wide">{title}</span>
-        {onClose && (
-          <button onClick={onClose} className="ml-auto text-zinc-600 hover:text-zinc-400 transition-colors">
-            <Icon name="x" size={12} />
-          </button>
+    <div className="flex items-center justify-between mb-5">
+      <div className="flex items-center gap-2.5">
+        <h2 className="text-[15px] font-black text-white">{title}</h2>
+        {count!=null && (
+          <span className="text-[10px] font-black text-zinc-700 px-1.5 py-0.5 rounded-full bg-zinc-800/80 border border-zinc-800">{count}</span>
         )}
+      </div>
+      {action}
+    </div>
+  );
+}
+
+function AddBtn({ onClick, label="Add Task" }) {
+  return (
+    <button onClick={onClick} className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[12px] font-black text-white transition-all hover:-translate-y-px active:translate-y-0" style={{ background:"linear-gradient(135deg,#6366f1,#7c3aed)", boxShadow:"0 4px 14px rgba(99,102,241,0.35)" }}>
+      <Plus size={12} strokeWidth={2.5}/>{label}
+    </button>
+  );
+}
+
+function AiBtn({ onClick, loading, label, small }) {
+  return (
+    <button onClick={onClick} disabled={loading} className={`flex items-center gap-1.5 rounded-xl font-black transition-all disabled:opacity-60 ${small?"px-2.5 py-1.5 text-[11px]":"px-3 py-1.5 text-[12px]"}`} style={{ background:"linear-gradient(135deg,rgba(139,92,246,0.2),rgba(99,102,241,0.14))", border:"1px solid rgba(139,92,246,0.4)", color:"#c4b5fd", boxShadow:"0 0 16px rgba(139,92,246,0.18)" }}>
+      {loading ? <Loader2 size={11} className="animate-spin"/> : <Sparkles size={11}/>}
+      {loading?"Thinking…":label}
+    </button>
+  );
+}
+
+function AiPanel({ title, content, loading, onClose }) {
+  return (
+    <div className="rounded-2xl overflow-hidden mb-4" style={{ background:"linear-gradient(135deg,rgba(99,102,241,0.07),rgba(139,92,246,0.05))", border:"1px solid rgba(139,92,246,0.2)" }}>
+      <div className="flex items-center gap-2 px-4 py-3" style={{ borderBottom:"1px solid rgba(139,92,246,0.15)" }}>
+        <Sparkles size={12} className="text-violet-400"/>
+        <span className="text-[11px] font-black uppercase tracking-widest text-violet-300">{title}</span>
+        {onClose && <button onClick={onClose} className="ml-auto text-zinc-700 hover:text-zinc-400 transition-colors"><X size={12}/></button>}
       </div>
       <div className="px-4 py-3">
-        {loading ? (
-          <div className="flex items-center gap-2 py-2">
-            <span className="w-3 h-3 border-2 border-violet-500/40 border-t-violet-400 rounded-full animate-spin" />
-            <span className="text-xs text-zinc-500">Generating…</span>
-          </div>
-        ) : (
-          <div className="text-xs text-zinc-300 leading-relaxed whitespace-pre-wrap">{content}</div>
-        )}
+        {loading
+          ? <div className="flex items-center gap-2"><Loader2 size={12} className="animate-spin text-violet-400"/><span className="text-[12px] text-zinc-500">Generating…</span></div>
+          : <div className="text-[12.5px] text-zinc-300 leading-relaxed whitespace-pre-wrap">{content}</div>
+        }
       </div>
     </div>
   );
 }
 
-// ─── KANBAN BOARD ─────────────────────────────────────────────────────────────
+function PriorityDot({ p }) {
+  return <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background:PCOL[p]||"#71717a" }}/>;
+}
+
+function StatusChip({ status }) {
+  const c = SCOL[status]||"#71717a";
+  return (
+    <span className="flex items-center gap-1 px-2 py-0.5 rounded-lg text-[10.5px] font-bold" style={{ background:`${c}18`, border:`1px solid ${c}30`, color:c }}>
+      <span className="w-1 h-1 rounded-full" style={{background:c}}/>{status}
+    </span>
+  );
+}
+
+function TaskCard({ task, onClick, onEdit, onComplete }) {
+  const overdue  = isOverdue(task);
+  const dueSoon  = isDueSoon(task);
+  const pColor   = PCOL[task.priority]||"#71717a";
+  const subDone  = (task.subtasks||[]).filter(s=>s.mark_complete).length;
+  const subTotal = (task.subtasks||[]).length;
+
+  return (
+    <div
+      onClick={onClick}
+      className="group relative rounded-2xl cursor-pointer transition-all hover:-translate-y-0.5"
+      style={{
+        background:"linear-gradient(160deg,rgba(255,255,255,0.03),rgba(255,255,255,0.01))",
+        border:`1px solid ${overdue?"rgba(239,68,68,0.3)":dueSoon?"rgba(245,158,11,0.25)":"rgba(255,255,255,0.07)"}`,
+        boxShadow: overdue?"0 2px 20px rgba(239,68,68,0.1)":dueSoon?"0 2px 20px rgba(245,158,11,0.08)":"0 2px 12px rgba(0,0,0,0.3)",
+      }}
+    >
+      {/* left priority stripe */}
+      <div className="absolute left-0 top-3 bottom-3 w-0.5 rounded-full" style={{ background:pColor, opacity:0.7 }}/>
+
+      <div className="px-4 py-3 pl-5">
+        {/* top row */}
+        <div className="flex items-start gap-2 mb-2">
+          <button
+            onClick={e=>{e.stopPropagation();onComplete(task);}}
+            className={`w-4 h-4 mt-0.5 rounded border-2 shrink-0 flex items-center justify-center transition-all ${task.mark_complete?"border-emerald-500 bg-emerald-500":"border-zinc-600 hover:border-indigo-400"}`}
+          >
+            {task.mark_complete&&<Check size={8} strokeWidth={3} className="text-white"/>}
+          </button>
+          <p className={`flex-1 text-[13px] font-semibold leading-snug ${task.mark_complete?"line-through text-zinc-600":"text-zinc-100"}`}>{task.title}</p>
+          <button
+            onClick={e=>{e.stopPropagation();onEdit(task);}}
+            className="opacity-0 group-hover:opacity-100 w-6 h-6 rounded-lg flex items-center justify-center text-zinc-600 hover:text-zinc-200 hover:bg-white/5 transition-all shrink-0"
+          >
+            <Edit3 size={11}/>
+          </button>
+        </div>
+
+        {/* badges row */}
+        <div className="flex items-center gap-1.5 flex-wrap pl-6">
+          <span className="flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[10px] font-bold" style={{ color:pColor, background:`${pColor}15`, border:`1px solid ${pColor}25` }}>
+            <span className="w-1 h-1 rounded-full" style={{background:pColor}}/>{task.priority}
+          </span>
+          {task.dueDate && (
+            <span className={`flex items-center gap-1 text-[10.5px] ${dueCls(task)}`}>
+              <Clock size={9}/>{dueLabel(task)}
+            </span>
+          )}
+          {subTotal>0 && (
+            <span className="text-[10px] text-zinc-600 flex items-center gap-1">
+              <CheckCircle2 size={9}/>{subDone}/{subTotal}
+            </span>
+          )}
+        </div>
+
+        {/* assignee */}
+        <div className="flex items-center gap-1.5 mt-2.5 pl-6 pt-2" style={{borderTop:"1px solid rgba(255,255,255,0.04)"}}>
+          <Avatar name={task.assignee_email?.split("@")[0]||"?"} size={16} color="#6366f1"/>
+          <span className="text-[10.5px] text-zinc-600 truncate">{task.assignee_email?.split("@")[0]}</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ─── KANBAN ──────────────────────────────────────────────────────────────── */
+const COLS = ["Todo","In Progress","In Review","Done"];
+const COL_META = {
+  "Todo":        { color:"#71717a", icon:Circle },
+  "In Progress": { color:"#3b82f6", icon:Loader2 },
+  "In Review":   { color:"#8b5cf6", icon:Eye },
+  "Done":        { color:"#10b981", icon:CheckCircle2 },
+};
+
 function KanbanView({ tasks, members, projectId, onAddTask, onTaskUpdated }) {
   const { user } = useAuth();
-  const [dragging, setDragging] = useState(null);
-  const [dragOver, setDragOver] = useState(null);
-  const [editTask, setEditTask] = useState(null);
+  const [dragging,    setDragging]    = useState(null);
+  const [dragOver,    setDragOver]    = useState(null);
+  const [editTask,    setEditTask]    = useState(null);
   const [detailTask,  setDetailTask]  = useState(null);
-  const COLS      = ["Todo","In Progress","In Review","Done"];
-  const colColors = { "Todo":"#71717a","In Progress":"#3b82f6","In Review":"#8b5cf6","Done":"#10b981" };
 
-  const tasksByCol = COLS.reduce((acc, col) => {
-    acc[col] = tasks.filter((t) => t.status === col);
-    return acc;
-  }, {});
+  const byCol = COLS.reduce((acc,c) => { acc[c]=tasks.filter(t=>t.status===c); return acc; },{});
 
-  const moveTask = async (taskId, toCol) => {
-    const task = tasks.find((t) => t.id === taskId);
-    if (!task || task.status === toCol) return;
-    try {
-      await api.tasks.edit(user.id, projectId, [{ ...task, taskId: task.id, assigneEmail: task.assignee_email, status: toCol }]);
-      onTaskUpdated?.();
-    } catch (e) { showToast(e.message, "error"); }
+  const moveTask = async (taskId,toCol) => {
+    const t=tasks.find(t=>t.id===taskId);
+    if (!t||t.status===toCol) return;
+    try { await api.tasks.edit(user.id,projectId,[{...t,taskId:t.id,assigneEmail:t.assignee_email,status:toCol}]); onTaskUpdated?.(); }
+    catch(e) { showToast(e.message,"error"); }
   };
 
-  const toggleComplete = async (task) => {
-    try {
-      await api.tasks.markComplete(user.id, projectId, task.id);
-      onTaskUpdated?.();
-    } catch (e) { showToast(e.message, "error"); }
+  const toggleComplete = async t => {
+    try { await api.tasks.markComplete(user.id,projectId,t.id); onTaskUpdated?.(); }
+    catch(e) { showToast(e.message,"error"); }
   };
 
   return (
-    <div className="p-6">
-      <div className="flex items-center justify-between mb-5">
-        <h2 className="text-sm font-semibold text-zinc-200">Board</h2>
-        <Button size="sm" icon="plus" onClick={onAddTask}>Add Task</Button>
-      </div>
-      <div className="flex gap-4 overflow-x-auto pb-4">
-        {COLS.map((col) => (
-          <div
-            key={col}
-            className={`flex-shrink-0 w-72 rounded-xl border transition-colors ${dragOver === col ? "border-indigo-500/50 bg-indigo-500/5" : "border-zinc-800 bg-zinc-900/50"}`}
-            onDragOver={(e) => { e.preventDefault(); setDragOver(col); }}
-            onDragLeave={() => setDragOver(null)}
-            onDrop={() => { if (dragging) { moveTask(dragging, col); setDragging(null); setDragOver(null); } }}
-          >
-            <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-800">
-              <div className="flex items-center gap-2">
-                <div className="w-2 h-2 rounded-full" style={{ background: colColors[col] }} />
-                <span className="text-xs font-semibold text-zinc-300">{col}</span>
-                <span className="text-xs text-zinc-600 bg-zinc-800 px-1.5 py-0.5 rounded-md">{tasksByCol[col].length}</span>
-              </div>
-              <button onClick={onAddTask} className="text-zinc-600 hover:text-zinc-400 transition-colors">
-                <Icon name="plus" size={14} />
-              </button>
-            </div>
-            <div className="p-3 space-y-2 min-h-32">
-              {tasksByCol[col].map((task) => (
-                <div
-                  key={task.id}
-                  draggable
-                  onDragStart={() => setDragging(task.id)}
-                  onClick={() => setDetailTask(task)}
-                  className={`bg-zinc-900 border rounded-lg p-3 cursor-pointer hover:shadow-lg hover:shadow-black/20 transition-all group ${isOverdue(task) ? "border-red-500/40 hover:border-red-500/60" : isDueSoon(task) ? "border-amber-500/30 hover:border-amber-500/50" : "border-zinc-800 hover:border-zinc-600"}`}
-                >
-                  <div className="flex items-start justify-between gap-2 mb-2">
-                    <div className="flex items-start gap-2 flex-1 min-w-0">
-                      <button
-                        onClick={(e) => { e.stopPropagation(); toggleComplete(task); }}
-                        className={`w-4 h-4 mt-0.5 rounded border shrink-0 flex items-center justify-center transition-colors ${task.mark_complete ? "bg-emerald-500 border-emerald-500" : "border-zinc-600 hover:border-zinc-400"}`}
-                      >
-                        {task.mark_complete && <Icon name="checkSimple" size={9} className="text-white" />}
-                      </button>
-                      <p className={`text-xs font-medium leading-snug ${task.mark_complete ? "line-through text-zinc-600" : "text-zinc-200"}`}>{task.title}</p>
-                    </div>
-                    <button onClick={(e) => { e.stopPropagation(); setEditTask(task); }} className="opacity-0 group-hover:opacity-100 transition-opacity text-zinc-600 hover:text-zinc-400 shrink-0">
-                      <Icon name="edit" size={12} />
-                    </button>
-                  </div>
-                  <div className="flex items-center justify-between mt-2">
-                    <Badge variant={priorityVariant(task.priority)}>{task.priority}</Badge>
-                    <div className="flex items-center gap-1.5">
-                      <Icon name="clock" size={11} className={isOverdue(task) ? "text-red-400" : isDueSoon(task) ? "text-amber-400" : "text-zinc-600"} />
-                      <span className={`text-xs ${dueDateStyle(task)}`}>{dueDateLabel(task)}</span>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-1.5 mt-2 pt-2 border-t border-zinc-800/60">
-                    <Avatar name={task.assignee_email?.split("@")[0] || "?"} size={18} color="#6366f1" />
-                    <span className="text-xs text-zinc-600 truncate">{task.assignee_email?.split("@")[0]}</span>
-                  </div>
-                  {task.subtasks?.length > 0 && (
-                    <div className="flex items-center gap-1 mt-1.5">
-                      <Icon name="list" size={10} className="text-zinc-600" />
-                      <span className="text-xs text-zinc-600">
-                        {task.subtasks.filter((s) => s.mark_complete).length}/{task.subtasks.length} subtasks
-                      </span>
-                    </div>
-                  )}
+    <div className="p-6 h-full">
+      <SectionHeader title="Board" count={tasks.length} action={<AddBtn onClick={onAddTask}/>}/>
+      <div className="flex gap-4 overflow-x-auto pb-4 h-[calc(100%-52px)]">
+        {COLS.map(col=>{
+          const meta  = COL_META[col];
+          const ColIcon = meta.icon;
+          const active  = dragOver===col;
+          return (
+            <div key={col} className="flex-shrink-0 w-72 flex flex-col rounded-2xl overflow-hidden transition-all" style={{ background:active?`${meta.color}0a`:"rgba(255,255,255,0.02)", border:`1px solid ${active?meta.color+"40":"rgba(255,255,255,0.06)"}`, boxShadow:active?`0 0 24px ${meta.color}18`:"none" }} onDragOver={e=>{e.preventDefault();setDragOver(col);}} onDragLeave={()=>setDragOver(null)} onDrop={()=>{if(dragging){moveTask(dragging,col);setDragging(null);setDragOver(null);}}} >
+              {/* column header */}
+              <div className="flex items-center gap-2.5 px-4 py-3 shrink-0" style={{ borderBottom:`1px solid ${meta.color}25`, background:`${meta.color}0a` }}>
+                <div className="w-6 h-6 rounded-lg flex items-center justify-center" style={{ background:`${meta.color}20`, border:`1px solid ${meta.color}30` }}>
+                  <ColIcon size={11} style={{color:meta.color}} strokeWidth={2}/>
                 </div>
-              ))}
-              {tasksByCol[col].length === 0 && (
-                <div className="flex items-center justify-center h-20 text-xs text-zinc-700 border border-dashed border-zinc-800 rounded-lg">No tasks</div>
-              )}
+                <span className="text-[12px] font-black text-zinc-200">{col}</span>
+                <span className="ml-auto text-[10px] font-black px-1.5 py-0.5 rounded-full" style={{ color:meta.color, background:`${meta.color}18`, border:`1px solid ${meta.color}30` }}>{byCol[col].length}</span>
+                <button onClick={onAddTask} className="w-5 h-5 rounded-md flex items-center justify-center text-zinc-700 hover:text-zinc-300 hover:bg-white/5 transition-all"><Plus size={11}/></button>
+              </div>
+
+              {/* cards */}
+              <div className="flex-1 overflow-y-auto p-3 space-y-2.5" style={{scrollbarWidth:"none"}}>
+                {byCol[col].map(task=>(
+                  <div key={task.id} draggable onDragStart={()=>setDragging(task.id)}>
+                    <TaskCard task={task} onClick={()=>setDetailTask(task)} onEdit={t=>setEditTask(t)} onComplete={toggleComplete}/>
+                  </div>
+                ))}
+                {byCol[col].length===0&&(
+                  <div className="flex items-center justify-center h-20 rounded-xl text-[11.5px] text-zinc-700 font-medium" style={{border:"1.5px dashed rgba(255,255,255,0.06)"}}>
+                    Drop tasks here
+                  </div>
+                )}
+              </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
-      {editTask && (
-        <TaskModal open={!!editTask} onClose={() => setEditTask(null)} projectId={projectId} task={editTask} members={members} onSaved={() => { setEditTask(null); onTaskUpdated?.(); }} />
-      )}
-      <TaskDetailModal
-        open={!!detailTask}
-        task={detailTask}
-        projectId={projectId}
-        members={members}
-        onClose={() => setDetailTask(null)}
-        onSaved={() => { setDetailTask(null); onTaskUpdated?.(); }}
-        onEdit={(t) => setEditTask(t)}
-      />
+
+      {editTask&&<TaskModal open={!!editTask} onClose={()=>setEditTask(null)} projectId={projectId} task={editTask} members={members} onSaved={()=>{setEditTask(null);onTaskUpdated?.();}}/>}
+      <TaskDetailModal open={!!detailTask} task={detailTask} projectId={projectId} members={members} onClose={()=>setDetailTask(null)} onSaved={()=>{setDetailTask(null);onTaskUpdated?.();}} onEdit={t=>setEditTask(t)}/>
     </div>
   );
 }
 
-// ─── LIST VIEW ────────────────────────────────────────────────────────────────
+/* ─── LIST VIEW ───────────────────────────────────────────────────────────── */
 function ListView({ tasks, members, projectId, onAddTask, onTaskUpdated }) {
   const { user } = useAuth();
   const [editTask,   setEditTask]   = useState(null);
   const [detailTask, setDetailTask] = useState(null);
+  const [search,     setSearch]     = useState("");
+  const [filter,     setFilter]     = useState("All");
   const [expanded,   setExpanded]   = useState({});
+  const toggleExpand = (id,e) => { e.stopPropagation(); setExpanded(p=>({...p,[id]:!p[id]})); };
 
-  const toggleComplete = async (task) => {
-    try {
-      await api.tasks.markComplete(user.id, projectId, task.id);
-      onTaskUpdated?.();
-    } catch (e) { showToast(e.message, "error"); }
+  const toggleComplete = async t => {
+    try { await api.tasks.markComplete(user.id,projectId,t.id); onTaskUpdated?.(); }
+    catch(e) { showToast(e.message,"error"); }
   };
+
+  const filtered = tasks.filter(t=>{
+    const matchSearch = t.title.toLowerCase().includes(search.toLowerCase());
+    const matchFilter = filter==="All"||t.status===filter||(filter==="Overdue"&&isOverdue(t))||(filter==="Done"&&t.mark_complete);
+    return matchSearch&&matchFilter;
+  });
+
+  const filters = ["All",...COLS,"Overdue"];
 
   return (
     <div className="p-6">
-      <div className="flex items-center justify-between mb-4">
-        <h2 className="text-sm font-semibold text-zinc-200">List</h2>
-        <Button size="sm" icon="plus" onClick={onAddTask}>Add Task</Button>
-      </div>
-      <div className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden">
-        <div className="grid gap-0 text-xs text-zinc-500 font-medium px-4 py-2.5 border-b border-zinc-800" style={{ gridTemplateColumns: "1fr 140px 120px 100px 100px 36px" }}>
-          <span>Task</span><span>Assignee</span><span>Status</span><span>Priority</span><span>Due</span><span />
+      <SectionHeader title="List" count={tasks.length} action={<AddBtn onClick={onAddTask}/>}/>
+
+      {/* filter + search bar */}
+      <div className="flex items-center gap-3 mb-4">
+        <div className="relative flex-1 max-w-xs">
+          <Search size={12} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-600"/>
+          <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search tasks…" className="w-full pl-8 pr-3 py-2 rounded-xl text-[12.5px] text-zinc-300 placeholder-zinc-700 outline-none transition-all" style={{background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.07)",fontFamily:FONT}}/>
         </div>
-        {tasks.length === 0 ? (
-          <Empty icon="check" title="No tasks yet" action={<Button size="sm" icon="plus" onClick={onAddTask}>Add Task</Button>} />
-        ) : tasks.map((task, i) => (
-          <div key={task.id}>
-            <div
-              className={`grid items-center gap-0 px-4 py-3 hover:bg-zinc-800/40 transition-colors cursor-pointer ${i < tasks.length - 1 ? "border-b border-zinc-800/50" : ""} ${isOverdue(task) ? "bg-red-500/3" : ""}`}
-              style={{ gridTemplateColumns: "1fr 140px 120px 100px 100px 36px" }}
-              onClick={() => setDetailTask(task)}
-            >
-              <div className="flex items-center gap-2.5 min-w-0">
-                <button onClick={(e) => { e.stopPropagation(); toggleComplete(task); }}
-                  className={`w-4 h-4 rounded border shrink-0 flex items-center justify-center transition-colors ${task.mark_complete ? "bg-emerald-500 border-emerald-500" : "border-zinc-600 hover:border-zinc-400"}`}>
-                  {task.mark_complete && <Icon name="checkSimple" size={9} className="text-white" />}
+        <div className="flex items-center gap-1">
+          {filters.map(f=>(
+            <button key={f} onClick={()=>setFilter(f)} className="px-2.5 py-1.5 rounded-xl text-[11px] font-bold transition-all" style={{ background:filter===f?"rgba(99,102,241,0.15)":"rgba(255,255,255,0.02)", border:`1px solid ${filter===f?"rgba(99,102,241,0.35)":"rgba(255,255,255,0.05)"}`, color:filter===f?"#a5b4fc":"#52525b" }}>
+              {f}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* table */}
+      <div className="rounded-2xl overflow-hidden" style={{border:"1px solid rgba(255,255,255,0.07)"}}>
+        {/* header */}
+        <div className="grid px-4 py-2.5 text-[10px] font-black uppercase tracking-widest text-zinc-600" style={{gridTemplateColumns:"1fr 150px 130px 90px 100px 32px",background:"rgba(255,255,255,0.02)",borderBottom:"1px solid rgba(255,255,255,0.06)"}}>
+          <span>Task</span><span>Assignee</span><span>Status</span><span>Priority</span><span>Due</span><span/>
+        </div>
+
+        {filtered.length===0 ? (
+          <div className="flex flex-col items-center justify-center py-16 gap-3">
+            <div className="w-10 h-10 rounded-2xl flex items-center justify-center" style={{background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.07)"}}>
+              <CheckCircle2 size={18} className="text-zinc-700"/>
+            </div>
+            <p className="text-[13px] text-zinc-600 font-medium">No tasks found</p>
+          </div>
+        ) : filtered.map((task,i)=>(
+          <React.Fragment key={task.id}>
+            <div className="group grid items-center px-4 py-3 cursor-pointer transition-all hover:bg-white/[0.02]" style={{gridTemplateColumns:"1fr 150px 130px 90px 100px 32px",borderBottom:"1px solid rgba(255,255,255,0.04)"}} onClick={()=>setDetailTask(task)}>
+              <div className="flex items-center gap-2.5 min-w-0 pr-3">
+                <button onClick={e=>{e.stopPropagation();toggleComplete(task);}} className={`w-4 h-4 rounded border-2 shrink-0 flex items-center justify-center transition-all ${task.mark_complete?"border-emerald-500 bg-emerald-500":"border-zinc-700 group-hover:border-indigo-500/50"}`}>
+                  {task.mark_complete&&<Check size={8} strokeWidth={3} className="text-white"/>}
                 </button>
-                <span className={`text-sm truncate ${task.mark_complete ? "line-through text-zinc-600" : "text-zinc-300"}`}>{task.title}</span>
-                {task.subtasks?.length > 0 && (
-                  <span className="text-xs text-zinc-600 bg-zinc-800 px-1.5 py-0.5 rounded shrink-0">{task.subtasks.length}</span>
+                <div className="w-1.5 h-1.5 rounded-full shrink-0" style={{background:PCOL[task.priority]||"#71717a"}}/>
+                <span className={`text-[13px] font-medium truncate ${task.mark_complete?"line-through text-zinc-600":"text-zinc-200"}`}>{task.title}</span>
+                {(task.subtasks||[]).length>0&&(
+                  <button onClick={e=>toggleExpand(task.id,e)} className="shrink-0 flex items-center gap-1 text-[10px] text-zinc-600 hover:text-zinc-300 bg-zinc-800/60 hover:bg-zinc-800 px-1.5 py-0.5 rounded transition-all">
+                    {(task.subtasks||[]).length}
+                    <ChevronRight size={9} className={`transition-transform ${expanded[task.id]?"rotate-90":""}`}/>
+                  </button>
                 )}
               </div>
-              <div className="flex items-center gap-1.5">
-                <Avatar name={task.assignee_email?.split("@")[0] || "?"} size={20} color="#6366f1" />
-                <span className="text-xs text-zinc-500 truncate">{task.assignee_email?.split("@")[0]}</span>
+              <div className="flex items-center gap-1.5 min-w-0">
+                <Avatar name={task.assignee_email?.split("@")[0]||"?"} size={20} color="#6366f1"/>
+                <span className="text-[12px] text-zinc-500 truncate">{task.assignee_email?.split("@")[0]}</span>
               </div>
-              <Badge variant={statusVariant(task.status)}>{task.status}</Badge>
-              <Badge variant={priorityVariant(task.priority)}>{task.priority}</Badge>
-              <span className={`text-xs ${dueDateStyle(task)}`}>{dueDateLabel(task)}</span>
-              <button onClick={(e) => { e.stopPropagation(); setEditTask(task); }} className="text-zinc-700 hover:text-zinc-400 transition-colors" title="Edit task">
-                <Icon name="edit" size={13} />
+              <StatusChip status={task.status}/>
+              <span className="flex items-center gap-1 text-[11px] font-bold" style={{color:PCOL[task.priority]||"#71717a"}}>
+                <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{background:PCOL[task.priority]||"#71717a"}}/>{task.priority}
+              </span>
+              <span className={`text-[11.5px] ${dueCls(task)}`}>{dueLabel(task)}</span>
+              <button onClick={e=>{e.stopPropagation();setEditTask(task);}} className="opacity-0 group-hover:opacity-100 w-6 h-6 rounded-lg flex items-center justify-center text-zinc-600 hover:text-zinc-200 hover:bg-white/5 transition-all">
+                <Edit3 size={11}/>
               </button>
             </div>
-            {expanded[task.id] && task.subtasks?.map((sub) => (
-              <div key={sub.id} className="grid items-center gap-0 px-4 py-2.5 bg-zinc-950/40 border-b border-zinc-800/30" style={{ gridTemplateColumns: "1fr 140px 120px 100px 100px 36px" }}>
-                <div className="flex items-center gap-2.5 pl-6 min-w-0">
-                  <div className={`w-3.5 h-3.5 rounded border shrink-0 flex items-center justify-center ${sub.mark_complete ? "bg-emerald-500 border-emerald-500" : "border-zinc-700"}`}>
-                    {sub.mark_complete && <Icon name="checkSimple" size={8} className="text-white" />}
+            {/* ── subtask expand rows ── */}
+            {expanded[task.id]&&(task.subtasks||[]).map(sub=>(
+              <div key={sub.id} className="grid items-center px-4 py-2.5" style={{gridTemplateColumns:"1fr 150px 130px 90px 100px 32px",borderTop:"1px solid rgba(255,255,255,0.03)",background:"rgba(0,0,0,0.15)",borderBottom:"1px solid rgba(255,255,255,0.04)"}}>
+                <div className="flex items-center gap-2.5 pl-7 min-w-0">
+                  <div className={`w-3.5 h-3.5 rounded border-2 shrink-0 flex items-center justify-center ${sub.mark_complete?"border-emerald-500 bg-emerald-500":"border-zinc-700"}`}>
+                    {sub.mark_complete&&<Check size={7} strokeWidth={3} className="text-white"/>}
                   </div>
-                  <span className={`text-xs truncate ${sub.mark_complete ? "line-through text-zinc-600" : "text-zinc-400"}`}>{sub.title}</span>
+                  <span className={`text-[12px] truncate ${sub.mark_complete?"line-through text-zinc-600":"text-zinc-400"}`}>{sub.title}</span>
                 </div>
-                <div /><Badge variant={statusVariant(sub.status)}>{sub.status}</Badge>
-                <Badge variant={priorityVariant(sub.priority)}>{sub.priority}</Badge>
-                <span className="text-xs text-zinc-600">{formatDate(sub.dueDate)}</span><div />
+                <div/>
+                <StatusChip status={sub.status}/>
+                <span className="flex items-center gap-1 text-[10.5px] font-bold" style={{color:PCOL[sub.priority]||"#71717a"}}>
+                  <span className="w-1 h-1 rounded-full shrink-0" style={{background:PCOL[sub.priority]||"#71717a"}}/>{sub.priority}
+                </span>
+                <span className="text-[11px] text-zinc-600">{formatDate(sub.dueDate)}</span>
+                <div/>
               </div>
             ))}
-          </div>
+          </React.Fragment>
         ))}
       </div>
-      {editTask && (
-        <TaskModal open={!!editTask} onClose={() => setEditTask(null)} projectId={projectId} task={editTask} members={members} onSaved={() => { setEditTask(null); onTaskUpdated?.(); }} />
-      )}
-      <TaskDetailModal
-        open={!!detailTask}
-        task={detailTask}
-        projectId={projectId}
-        members={members}
-        onClose={() => setDetailTask(null)}
-        onSaved={() => { setDetailTask(null); onTaskUpdated?.(); }}
-        onEdit={(t) => setEditTask(t)}
-      />
+
+      {editTask&&<TaskModal open={!!editTask} onClose={()=>setEditTask(null)} projectId={projectId} task={editTask} members={members} onSaved={()=>{setEditTask(null);onTaskUpdated?.();}}/>}
+      <TaskDetailModal open={!!detailTask} task={detailTask} projectId={projectId} members={members} onClose={()=>setDetailTask(null)} onSaved={()=>{setDetailTask(null);onTaskUpdated?.();}} onEdit={t=>setEditTask(t)}/>
     </div>
   );
 }
 
-// ─── DASHBOARD ANALYTICS + AI PRODUCTIVITY INSIGHT (Feature 4) ──────────────
-function DashboardAnalytics({ projectId }) {
+/* ─── DASHBOARD ───────────────────────────────────────────────────────────── */
+function DashboardView({ projectId }) {
   const { user } = useAuth();
   const [data,    setData]    = useState(null);
   const [loading, setLoading] = useState(true);
+  const [insight, setInsight] = useState("");
+  const [insLoad, setInsLoad] = useState(false);
+  const [insShow, setInsShow] = useState(false);
 
-  // AI insight state
-  const [insight,        setInsight]        = useState("");
-  const [insightLoading, setInsightLoading] = useState(false);
-  const [insightShown,   setInsightShown]   = useState(false);
-
-  useEffect(() => {
-    api.tasks.dashboard(user.id, projectId)
-      .then((d) => setData(d))
-      .catch(console.error)
-      .finally(() => setLoading(false));
-  }, [user?.id, projectId]);
+  useEffect(()=>{ api.tasks.dashboard(user.id,projectId).then(d=>setData(d)).catch(console.error).finally(()=>setLoading(false)); },[user?.id,projectId]);
 
   const handleInsight = async () => {
-    setInsightShown(true);
-    setInsightLoading(true);
-    try {
-      const text = await generateProductivityInsight(data);
-      setInsight(text);
-    } catch (e) {
-      setInsight("Could not generate insight: " + e.message);
-    } finally {
-      setInsightLoading(false);
-    }
+    setInsShow(true); setInsLoad(true);
+    try { setInsight(await generateProductivityInsight(data)); }
+    catch(e) { setInsight("Could not generate insight: "+e.message); }
+    finally { setInsLoad(false); }
   };
 
-  if (loading) return <div className="flex justify-center py-16"><Spinner /></div>;
-  if (!data)   return <Empty icon="bar" title="No data available" />;
+  if (loading) return <div className="flex justify-center py-24"><Loader2 size={20} className="animate-spin text-zinc-600"/></div>;
+  if (!data)   return <div className="p-6"><Empty icon="bar" title="No data available"/></div>;
 
-  const { totalTask = 0, completedTask = 0, notcompletedTask = 0, highPriority = 0, mediumPriority = 0, lowPriority = 0, counttaskWithAssignEmails = [], profile = {} } = data;
-  const pct = totalTask ? Math.round((completedTask / totalTask) * 100) : 0;
+  const { totalTask=0,completedTask=0,notcompletedTask=0,highPriority=0,mediumPriority=0,lowPriority=0,counttaskWithAssignEmails=[],profile={} } = data;
+  const pct = totalTask?Math.round((completedTask/totalTask)*100):0;
+  const r   = 24, circ = 2*Math.PI*r;
+
+  const stats = [
+    { label:"Total Tasks",  value:totalTask,        color:"#6366f1", sub:null },
+    { label:"Completed",    value:completedTask,     color:"#10b981", sub:`${pct}%` },
+    { label:"In Progress",  value:notcompletedTask,  color:"#f59e0b", sub:null },
+    { label:"High Priority",value:highPriority,      color:"#ef4444", sub:null },
+  ];
 
   return (
-    <div className="p-6 space-y-4 max-w-4xl">
-      {/* Header + AI button */}
-      <div className="flex items-center justify-between">
-        <h2 className="text-sm font-semibold text-zinc-200">Dashboard</h2>
-        <button
-          onClick={handleInsight}
-          disabled={insightLoading}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold
-            bg-gradient-to-br from-violet-600 to-indigo-600 text-white
-            hover:from-violet-500 hover:to-indigo-500 shadow-lg shadow-violet-900/30
-            disabled:opacity-60 disabled:cursor-not-allowed transition-all"
-        >
-          {insightLoading
-            ? <span className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-            : <Sparkle />
-          }
-          AI Insight
-        </button>
-      </div>
+    <div className="p-6 space-y-6 max-w-5xl">
+      <SectionHeader title="Dashboard" action={<AiBtn onClick={handleInsight} loading={insLoad} label="AI Insight"/>}/>
 
-      {/* AI insight panel */}
-      {insightShown && (
-        <AiPanel
-          title="Productivity Insight"
-          content={insight}
-          loading={insightLoading}
-          onClose={() => setInsightShown(false)}
-        />
-      )}
+      {insShow&&<AiPanel title="Productivity Insight" content={insight} loading={insLoad} onClose={()=>setInsShow(false)}/>}
 
-      {/* Stats */}
+      {/* stat cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        {[
-          { l: "Total",      v: totalTask,       c: "#6366f1" },
-          { l: "Completed",  v: completedTask,   c: "#10b981" },
-          { l: "Pending",    v: notcompletedTask, c: "#f59e0b" },
-          { l: "Completion", v: `${pct}%`,       c: "#ec4899" },
-        ].map((s) => (
-          <div key={s.l} className="bg-zinc-900 border border-zinc-800 rounded-xl p-4">
-            <p className="text-2xl font-bold text-white">{s.v}</p>
-            <p className="text-xs text-zinc-500 mt-0.5">{s.l}</p>
-            <div className="mt-2 h-0.5 rounded-full bg-zinc-800">
-              <div className="h-full rounded-full transition-all" style={{ width: "60%", background: s.c }} />
+        {stats.map(s=>(
+          <div key={s.label} className="relative rounded-2xl p-4 overflow-hidden" style={{ background:"linear-gradient(160deg,rgba(255,255,255,0.03),rgba(255,255,255,0.01))", border:"1px solid rgba(255,255,255,0.07)" }}>
+            <div className="absolute top-2 right-2 w-8 h-8 rounded-full" style={{ background:`radial-gradient(circle,${s.color}30,transparent 70%)` }}/>
+            <p className="text-[28px] font-black text-white leading-none">{s.value}</p>
+            {s.sub&&<p className="text-[10px] font-black mt-1" style={{color:s.color}}>{s.sub} rate</p>}
+            <p className="text-[11px] text-zinc-600 font-medium mt-1">{s.label}</p>
+            <div className="mt-3 h-1 rounded-full" style={{background:"rgba(255,255,255,0.06)"}}>
+              <div className="h-full rounded-full transition-all" style={{ width:`${totalTask?(s.value/totalTask)*100:0}%`, background:s.color }}/>
             </div>
           </div>
         ))}
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4">
-          <h3 className="text-xs font-semibold text-zinc-400 mb-4 uppercase tracking-widest">By Priority</h3>
-          {[{ label:"High",count:highPriority,color:"#ef4444"},{ label:"Medium",count:mediumPriority,color:"#f59e0b"},{ label:"Low",count:lowPriority,color:"#10b981"}].map(({ label, count, color }) => (
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        {/* completion ring */}
+        <div className="rounded-2xl p-5 flex flex-col items-center justify-center gap-3" style={{ background:"linear-gradient(160deg,rgba(255,255,255,0.03),rgba(255,255,255,0.01))", border:"1px solid rgba(255,255,255,0.07)" }}>
+          <p className="text-[10.5px] font-black uppercase tracking-widest text-zinc-600">Completion</p>
+          <div className="relative">
+            <svg width={68} height={68} className="-rotate-90">
+              <circle cx={34} cy={34} r={r} fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth={5}/>
+              <circle cx={34} cy={34} r={r} fill="none" stroke={pct>=100?"#10b981":"#6366f1"} strokeWidth={5} strokeLinecap="round" strokeDasharray={circ} strokeDashoffset={circ*(1-pct/100)} style={{transition:"stroke-dashoffset 1s ease"}}/>
+            </svg>
+            <div className="absolute inset-0 flex items-center justify-center">
+              <span className="text-[16px] font-black text-white">{pct}%</span>
+            </div>
+          </div>
+          <p className="text-[11.5px] text-zinc-500">{completedTask} of {totalTask} done</p>
+        </div>
+
+        {/* priority breakdown */}
+        <div className="rounded-2xl p-5" style={{ background:"linear-gradient(160deg,rgba(255,255,255,0.03),rgba(255,255,255,0.01))", border:"1px solid rgba(255,255,255,0.07)" }}>
+          <p className="text-[10.5px] font-black uppercase tracking-widest text-zinc-600 mb-4">By Priority</p>
+          {[{label:"High",count:highPriority,color:"#ef4444"},{label:"Medium",count:mediumPriority,color:"#f59e0b"},{label:"Low",count:lowPriority,color:"#10b981"}].map(({label,count,color})=>(
             <div key={label} className="flex items-center gap-3 mb-3 last:mb-0">
-              <div className="w-2 h-2 rounded-full shrink-0" style={{ background: color }} />
-              <span className="text-xs text-zinc-400 w-16">{label}</span>
-              <div className="flex-1 h-1.5 bg-zinc-800 rounded-full overflow-hidden">
-                <div className="h-full rounded-full transition-all" style={{ width: `${totalTask ? (count/totalTask)*100 : 0}%`, background: color }} />
+              <div className="w-2 h-2 rounded-full shrink-0" style={{background:color}}/>
+              <span className="text-[12px] text-zinc-400 w-14">{label}</span>
+              <div className="flex-1 h-1.5 rounded-full" style={{background:"rgba(255,255,255,0.05)"}}>
+                <div className="h-full rounded-full" style={{width:`${totalTask?(count/totalTask)*100:0}%`,background:color,transition:"width 0.8s ease"}}/>
               </div>
-              <span className="text-xs text-zinc-500 w-4 text-right">{count}</span>
+              <span className="text-[11px] text-zinc-500 w-4 text-right">{count}</span>
             </div>
           ))}
         </div>
-        <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4">
-          <h3 className="text-xs font-semibold text-zinc-400 mb-4 uppercase tracking-widest">By Assignee</h3>
-          {counttaskWithAssignEmails.length === 0 ? (
-            <p className="text-xs text-zinc-600 text-center py-4">No assignee data</p>
-          ) : counttaskWithAssignEmails.map((a) => (
-            <div key={a.email} className="flex items-center gap-2.5 mb-3 last:mb-0">
-              <Avatar name={a.email?.split("@")[0] || "?"} src={profile[a.email]} size={22} color="#6366f1" />
-              <span className="text-xs text-zinc-400 flex-1 truncate">{a.email?.split("@")[0]}</span>
-              <span className="text-xs text-emerald-400">{a.completeCount}✓</span>
-              <span className="text-xs text-zinc-500">{a.incompleteCount} left</span>
-            </div>
-          ))}
+
+        {/* assignee breakdown */}
+        <div className="rounded-2xl p-5" style={{ background:"linear-gradient(160deg,rgba(255,255,255,0.03),rgba(255,255,255,0.01))", border:"1px solid rgba(255,255,255,0.07)" }}>
+          <p className="text-[10.5px] font-black uppercase tracking-widest text-zinc-600 mb-4">By Assignee</p>
+          {counttaskWithAssignEmails.length===0
+            ? <p className="text-[12px] text-zinc-700 text-center py-4">No assignee data</p>
+            : counttaskWithAssignEmails.map((a,i)=>(
+              <div key={a.email} className="flex items-center gap-2.5 mb-3 last:mb-0">
+                <Avatar name={a.email?.split("@")[0]||"?"} src={profile[a.email]} size={24} color="#6366f1"/>
+                <span className="text-[12px] text-zinc-400 flex-1 truncate">{a.email?.split("@")[0]}</span>
+                <span className="text-[11px] font-bold text-emerald-400">{a.completeCount}✓</span>
+                <span className="text-[11px] text-zinc-600">{a.incompleteCount}</span>
+              </div>
+            ))
+          }
         </div>
       </div>
     </div>
   );
 }
 
-// ─── MEMBERS VIEW ─────────────────────────────────────────────────────────────
+/* ─── MEMBERS VIEW ────────────────────────────────────────────────────────── */
+const ROLE_COLOR = { OWNER:"#f59e0b",ADMIN:"#ef4444",EDITOR:"#6366f1",VIEWER:"#71717a",COMMENTER:"#10b981" };
+
 function MembersView({ members, projectId, currentUserRole, onMemberAdded }) {
   const { user } = useAuth();
-  const [showInvite,   setShowInvite]   = useState(false);
-  const [inviteEmails, setInviteEmails] = useState("");
-  const [role,         setRole]         = useState("EDITOR");
-  const [inviteLoading,setInviteLoading]= useState(false);
+  const [showInvite, setShowInvite] = useState(false);
+  const [emails,     setEmails]     = useState("");
+  const [role,       setRole]       = useState("EDITOR");
+  const [invLoad,    setInvLoad]    = useState(false);
   const colors = ["#6366f1","#f59e0b","#10b981","#ec4899","#3b82f6","#8b5cf6"];
 
   const handleInvite = async () => {
-    const emails = inviteEmails.split(",").map((e) => e.trim()).filter(Boolean);
-    if (!emails.length) return;
-    setInviteLoading(true);
-    try {
-      await api.projects.inviteMember(user.id, projectId, { inviteEmail: emails, role });
-      showToast(`${emails.length} member(s) added`);
-      setShowInvite(false);
-      setInviteEmails("");
-      onMemberAdded?.();
-    } catch (e) { showToast(e.message, "error"); }
-    finally { setInviteLoading(false); }
+    const list = emails.split(",").map(e=>e.trim()).filter(Boolean);
+    if (!list.length) return;
+    setInvLoad(true);
+    try { await api.projects.inviteMember(user.id,projectId,{inviteEmail:list,role}); showToast(`${list.length} member(s) added`); setShowInvite(false); setEmails(""); onMemberAdded?.(); }
+    catch(e) { showToast(e.message,"error"); }
+    finally { setInvLoad(false); }
   };
+
+  const canInvite = ["OWNER","ADMIN"].includes(currentUserRole);
 
   return (
     <div className="p-6 max-w-2xl">
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h2 className="text-sm font-semibold text-zinc-200">Team Members</h2>
-          <p className="text-xs text-zinc-500 mt-0.5">{members.length} members</p>
-        </div>
-        {(currentUserRole === "OWNER" || currentUserRole === "ADMIN") && (
-          <Button size="sm" icon="plus" onClick={() => setShowInvite(true)}>Invite</Button>
-        )}
-      </div>
-      {showInvite && (
-        <div className="mb-5 p-4 bg-zinc-900 border border-zinc-700 rounded-xl space-y-3">
-          <p className="text-xs font-semibold text-zinc-300">Invite members</p>
-          <Input value={inviteEmails} onChange={(e) => setInviteEmails(e.target.value)} placeholder="email1@co.com, email2@co.com" />
+      <SectionHeader
+        title="Team Members"
+        count={members.length}
+        action={canInvite&&<AddBtn onClick={()=>setShowInvite(v=>!v)} label="Invite"/>}
+      />
+
+      {/* invite panel */}
+      {showInvite&&(
+        <div className="mb-5 p-4 rounded-2xl space-y-3" style={{ background:"linear-gradient(135deg,rgba(99,102,241,0.08),rgba(139,92,246,0.05))", border:"1px solid rgba(99,102,241,0.2)" }}>
+          <p className="text-[12px] font-black text-zinc-200 flex items-center gap-2"><Users size={12} className="text-indigo-400"/>Invite to project</p>
+          <input value={emails} onChange={e=>setEmails(e.target.value)} placeholder="email1@co.com, email2@co.com" className="w-full px-3.5 py-2.5 rounded-xl text-[13px] text-zinc-200 placeholder-zinc-700 outline-none transition-all" style={{background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.08)",fontFamily:FONT}}/>
           <div className="flex gap-2">
-            <Select value={role} onChange={(e) => setRole(e.target.value)} className="flex-1">
-              {["EDITOR","VIEWER","COMMENTER","ADMIN"].map((r) => <option key={r}>{r}</option>)}
-            </Select>
-            <Button loading={inviteLoading} onClick={handleInvite}>Send</Button>
-            <Button variant="secondary" onClick={() => setShowInvite(false)}>Cancel</Button>
+            <div className="relative flex-1">
+              <select value={role} onChange={e=>setRole(e.target.value)} className="w-full appearance-none px-3.5 py-2.5 pr-8 rounded-xl text-[13px] text-zinc-200 outline-none cursor-pointer" style={{background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.08)",fontFamily:FONT}}>
+                {["EDITOR","VIEWER","COMMENTER","ADMIN"].map(r=><option key={r} style={{background:"#1a1a2e"}}>{r}</option>)}
+              </select>
+            </div>
+            <button onClick={handleInvite} disabled={invLoad} className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-[12px] font-black text-white disabled:opacity-60 transition-all" style={{background:"linear-gradient(135deg,#6366f1,#7c3aed)"}}>
+              {invLoad?<Loader2 size={12} className="animate-spin"/>:<Send size={12}/>} Send
+            </button>
+            <button onClick={()=>setShowInvite(false)} className="px-3 py-2 rounded-xl text-[12px] text-zinc-500 hover:text-zinc-200 transition-colors" style={{border:"1px solid rgba(255,255,255,0.07)"}}>Cancel</button>
           </div>
         </div>
       )}
+
       <div className="space-y-2">
-        {members.map((m, i) => (
-          <div key={m.id} className="flex items-center gap-3 p-3 bg-zinc-900 border border-zinc-800 rounded-xl hover:border-zinc-700 transition-colors">
-            <Avatar name={m.fullname || m.emailuser} src={m.profile} size={36} color={colors[i % colors.length]} />
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium text-zinc-200">{m.fullname || "—"}</p>
-              <p className="text-xs text-zinc-500">{m.emailuser}</p>
+        {members.map((m,i)=>{
+          const rc = ROLE_COLOR[m.role]||"#71717a";
+          return (
+            <div key={m.id} className="flex items-center gap-3.5 p-3.5 rounded-2xl transition-all hover:bg-white/[0.02]" style={{ background:"rgba(255,255,255,0.02)", border:"1px solid rgba(255,255,255,0.06)" }}>
+              <Avatar name={m.fullname||m.emailuser} src={m.profile} size={38} color={colors[i%colors.length]}/>
+              <div className="flex-1 min-w-0">
+                <p className="text-[13px] font-bold text-zinc-200">{m.fullname||"—"}</p>
+                <p className="text-[11.5px] text-zinc-600">{m.emailuser}</p>
+              </div>
+              <span className="px-2.5 py-1 rounded-xl text-[10.5px] font-black" style={{ color:rc, background:`${rc}15`, border:`1px solid ${rc}28` }}>{m.role}</span>
             </div>
-            <Badge variant={m.role?.toLowerCase()}>{m.role}</Badge>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );
 }
 
-// ─── CHAT VIEW + AI SUMMARY + AI TASK EXTRACTOR (Features 2 & 3) ─────────────
+/* ─── CHAT VIEW ───────────────────────────────────────────────────────────── */
 function ChatView({ projectId, members, onTaskCreated }) {
   const { user }  = useAuth();
   const socket    = useSocket();
-  const [messages,      setMessages]      = useState([]);
-  const [loading,       setLoading]       = useState(true);
-  const [input,         setInput]         = useState("");
-  const [typing,        setTyping]        = useState([]);
+  const [messages,   setMessages]   = useState([]);
+  const [loading,    setLoading]    = useState(true);
+  const [input,      setInput]      = useState("");
+  const [typing,     setTyping]     = useState([]);
+  const [mentionQ,   setMentionQ]   = useState(null);
+  const [mentionSug, setMentionSug] = useState([]);
+  const [mentionIdx, setMentionIdx] = useState(0);
+  const [sumText,    setSumText]    = useState("");
+  const [sumLoad,    setSumLoad]    = useState(false);
+  const [sumShow,    setSumShow]    = useState(false);
+  const [showExt,    setShowExt]    = useState(false);
+  const [extInput,   setExtInput]   = useState("");
+  const [extracted,  setExtracted]  = useState([]);
+  const [extLoad,    setExtLoad]    = useState(false);
+  const [creating,   setCreating]   = useState(false);
   const bottomRef   = useRef(null);
-  const typingTimer = useRef(null);
   const inputRef    = useRef(null);
+  const typingTimer = useRef(null);
 
-  // ── @mention state ────────────────────────────────────────────────────────
-  const [mentionQuery,       setMentionQuery]       = useState(null); // null = closed, string = current query
-  const [mentionSuggestions, setMentionSuggestions] = useState([]);
-  const [mentionIndex,       setMentionIndex]       = useState(0);
-
-  // ── AI: Chat Summary ──────────────────────────────────────────────────────
-  const [summary,        setSummary]        = useState("");
-  const [summaryLoading, setSummaryLoading] = useState(false);
-  const [summaryShown,   setSummaryShown]   = useState(false);
-
-  // ── AI: Task Extractor panel ──────────────────────────────────────────────
-  const [showExtractor,  setShowExtractor]  = useState(false);
-  const [extractInput,   setExtractInput]   = useState("");
-  const [extracted,      setExtracted]      = useState([]);
-  const [extractLoading, setExtractLoading] = useState(false);
-  const [creating,       setCreating]       = useState(false);
-
-  useEffect(() => {
-    api.chat.getHistory(projectId)
-      .then((d) => setMessages(d.messages || []))
-      .catch(console.error)
-      .finally(() => setLoading(false));
+  useEffect(()=>{
+    api.chat.getHistory(projectId).then(d=>setMessages(d.messages||[])).catch(console.error).finally(()=>setLoading(false));
     socket?.joinProject(projectId);
-    return () => socket?.leaveProject(projectId);
-  }, [projectId]);
+    return()=>socket?.leaveProject(projectId);
+  },[projectId]);
 
-  useEffect(() => {
-    const off1 = socket?.on("receive_message", (msg) => {
-      setMessages((prev) => {
-        const hasOpt = prev.some((m) => m._optimistic && m.senderId === msg.senderId && m.content === msg.message);
-        if (hasOpt) return prev.map((m) => m._optimistic && m.senderId === msg.senderId && m.content === msg.message ? { ...msg, content: msg.message || msg.content } : m);
-        return [...prev, { ...msg, content: msg.message || msg.content }];
+  useEffect(()=>{
+    const o1=socket?.on("receive_message",msg=>{
+      setMessages(p=>{
+        const hasOpt=p.some(m=>m._optimistic&&m.senderId===msg.senderId&&m.content===msg.message);
+        if(hasOpt) return p.map(m=>m._optimistic&&m.senderId===msg.senderId&&m.content===msg.message?{...msg,content:msg.message||msg.content}:m);
+        return [...p,{...msg,content:msg.message||msg.content}];
       });
     });
-    const off2 = socket?.on("user_typing",         ({ userId, fullname }) => { if (userId !== user?.id) setTyping((p) => [...new Set([...p, fullname])]); });
-    const off3 = socket?.on("user_stopped_typing", ({ userId })           => { if (userId !== user?.id) setTyping((p) => p.filter((_, i) => i > 0)); });
-    return () => { off1?.(); off2?.(); off3?.(); };
-  }, [socket, user?.id]);
+    const o2=socket?.on("user_typing",({userId,fullname})=>{if(userId!==user?.id)setTyping(p=>[...new Set([...p,fullname])]);});
+    const o3=socket?.on("user_stopped_typing",({userId})=>{if(userId!==user?.id)setTyping(p=>p.filter((_,i)=>i>0));});
+    return()=>{o1?.();o2?.();o3?.();};
+  },[socket,user?.id]);
 
-  useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages]);
+  useEffect(()=>{bottomRef.current?.scrollIntoView({behavior:"smooth"});},[messages]);
 
-  const handleInput = (v) => {
+  const handleInput = v => {
     setInput(v);
     socket?.typingStart(projectId);
     clearTimeout(typingTimer.current);
-    typingTimer.current = setTimeout(() => socket?.typingStop(projectId), 1500);
-
-    // @mention detection — find last @ in value
-    const cursor   = inputRef.current?.selectionStart ?? v.length;
-    const textSoFar = v.slice(0, cursor);
-    const atMatch  = textSoFar.match(/@(\w*)$/);
+    typingTimer.current=setTimeout(()=>socket?.typingStop(projectId),1500);
+    const cursor=inputRef.current?.selectionStart??v.length;
+    const atMatch=v.slice(0,cursor).match(/@(\w*)$/);
     if (atMatch) {
-      const q = atMatch[1].toLowerCase();
-      setMentionQuery(q);
-      setMentionIndex(0);
-      const filtered = members.filter((m) => {
-        const name  = (m.fullname || "").toLowerCase();
-        const email = (m.emailuser || "").toLowerCase();
-        return name.includes(q) || email.split("@")[0].includes(q);
-      }).slice(0, 5);
-      setMentionSuggestions(filtered);
-    } else {
-      setMentionQuery(null);
-      setMentionSuggestions([]);
-    }
+      const q=atMatch[1].toLowerCase();
+      setMentionQ(q); setMentionIdx(0);
+      setMentionSug(members.filter(m=>(m.fullname||"").toLowerCase().includes(q)||(m.emailuser||"").toLowerCase().split("@")[0].includes(q)).slice(0,5));
+    } else { setMentionQ(null); setMentionSug([]); }
   };
 
-  const insertMention = (member) => {
-    const name      = member.fullname || member.emailuser.split("@")[0];
-    const cursor    = inputRef.current?.selectionStart ?? input.length;
-    const textSoFar = input.slice(0, cursor);
-    const before    = textSoFar.replace(/@\w*$/, `@${name} `);
-    const after     = input.slice(cursor);
-    setInput(before + after);
-    setMentionQuery(null);
-    setMentionSuggestions([]);
-    setTimeout(() => inputRef.current?.focus(), 0);
+  const insertMention = m => {
+    const name=m.fullname||m.emailuser.split("@")[0];
+    const cursor=inputRef.current?.selectionStart??input.length;
+    const before=input.slice(0,cursor).replace(/@\w*$/,`@${name} `);
+    setInput(before+input.slice(cursor));
+    setMentionQ(null); setMentionSug([]);
+    setTimeout(()=>inputRef.current?.focus(),0);
   };
 
-  const handleKeyDown = (e) => {
-    if (mentionSuggestions.length > 0) {
-      if (e.key === "ArrowDown") { e.preventDefault(); setMentionIndex((i) => (i + 1) % mentionSuggestions.length); return; }
-      if (e.key === "ArrowUp")   { e.preventDefault(); setMentionIndex((i) => (i - 1 + mentionSuggestions.length) % mentionSuggestions.length); return; }
-      if (e.key === "Enter" || e.key === "Tab") { e.preventDefault(); insertMention(mentionSuggestions[mentionIndex]); return; }
-      if (e.key === "Escape")    { setMentionQuery(null); setMentionSuggestions([]); return; }
+  const handleKeyDown = e => {
+    if (mentionSug.length) {
+      if (e.key==="ArrowDown"){e.preventDefault();setMentionIdx(i=>(i+1)%mentionSug.length);return;}
+      if (e.key==="ArrowUp"){e.preventDefault();setMentionIdx(i=>(i-1+mentionSug.length)%mentionSug.length);return;}
+      if (e.key==="Enter"||e.key==="Tab"){e.preventDefault();insertMention(mentionSug[mentionIdx]);return;}
+      if (e.key==="Escape"){setMentionQ(null);setMentionSug([]);return;}
     }
-    if (e.key === "Enter" && !e.shiftKey) send();
+    if (e.key==="Enter"&&!e.shiftKey) send();
   };
 
   const send = () => {
-    const text = input.trim();
-    if (!text) return;
-    const optimistic = {
-      id: `temp-${Date.now()}`, projectId, content: text,
-      senderId: user?.id, sender_id: user?.id,
-      sender: { fullname: user?.fullname, profile: user?.profile },
-      senderName: user?.fullname, createdAt: new Date().toISOString(), _optimistic: true,
-    };
-    setMessages((prev) => [...prev, optimistic]);
-    setInput("");
-    socket?.typingStop(projectId);
-    socket?.sendMessage(projectId, text);
+    const text=input.trim(); if(!text) return;
+    setMessages(p=>[...p,{id:`tmp-${Date.now()}`,content:text,senderId:user?.id,sender:{fullname:user?.fullname,profile:user?.profile},createdAt:new Date().toISOString(),_optimistic:true}]);
+    setInput(""); socket?.typingStop(projectId); socket?.sendMessage(projectId,text);
   };
 
-  // Feature 2: Summarize conversation
   const handleSummarize = async () => {
-    if (!messages.length) { showToast("No messages to summarize", "warning"); return; }
-    setSummaryShown(true);
-    setSummaryLoading(true);
-    try {
-      const text = await summarizeChat(messages);
-      setSummary(text);
-    } catch (e) {
-      setSummary("Could not generate summary: " + e.message);
-    } finally {
-      setSummaryLoading(false);
-    }
+    if (!messages.length){showToast("No messages yet","warning");return;}
+    setSumShow(true); setSumLoad(true);
+    try{setSumText(await summarizeChat(messages));}
+    catch(e){setSumText("Could not summarize: "+e.message);}
+    finally{setSumLoad(false);}
   };
 
-  // Feature 3: Extract tasks from free text
   const handleExtract = async () => {
-    if (!extractInput.trim()) { showToast("Enter some text first", "warning"); return; }
-    setExtractLoading(true);
-    setExtracted([]);
-    try {
-      const tasks = await extractTasksFromText(extractInput.trim());
+    if (!extInput.trim()){showToast("Enter some text first","warning");return;}
+    setExtLoad(true); setExtracted([]);
+    try{
+      const tasks=await extractTasksFromText(extInput.trim());
       setExtracted(tasks);
-      if (!tasks.length) showToast("No tasks found in that text", "warning");
-    } catch (e) {
-      showToast(e.message || "AI extraction failed", "error");
-    } finally {
-      setExtractLoading(false);
-    }
+      if(!tasks.length) showToast("No tasks found","warning");
+    }catch(e){showToast(e.message||"AI extraction failed","error");}
+    finally{setExtLoad(false);}
   };
 
   const handleCreateExtracted = async () => {
-    if (!extracted.length || !members.length) return;
+    if (!extracted.length||!members.length) return;
     setCreating(true);
-    try {
-      const defaultAssignee = members[0]?.emailuser || "";
-      const taskPayloads = extracted.map((t) => ({
-        title:       t.title,
-        description: "",
-        status:      "Todo",
-        priority:    t.priority || "Medium",
-        assigneEmail: defaultAssignee,
-        startDate:   new Date().toISOString(),
-        dueDate:     new Date(Date.now() + 7 * 86400000).toISOString(),
-      }));
-      await api.tasks.add(user.id, projectId, taskPayloads);
+    try{
+      await api.tasks.add(user.id,projectId,extracted.map(t=>({title:t.title,description:"",status:"Todo",priority:t.priority||"Medium",assigneEmail:members[0]?.emailuser||"",startDate:new Date().toISOString(),dueDate:new Date(Date.now()+7*864e5).toISOString()})));
       showToast(`${extracted.length} task(s) created!`);
-      setShowExtractor(false);
-      setExtractInput("");
-      setExtracted([]);
-      onTaskCreated?.();
-    } catch (e) {
-      showToast(e.message, "error");
-    } finally {
-      setCreating(false);
-    }
+      setShowExt(false); setExtInput(""); setExtracted([]); onTaskCreated?.();
+    }catch(e){showToast(e.message,"error");}
+    finally{setCreating(false);}
   };
 
   return (
-    <div className="flex flex-col h-full" style={{ minHeight: 0 }}>
-      {/* Header with AI buttons */}
-      <div className="px-6 py-3 border-b border-zinc-800 shrink-0 flex items-center justify-between">
-        <div>
-          <h2 className="text-sm font-semibold text-zinc-200">Team Chat</h2>
-          <p className="text-xs text-zinc-500">Real-time project conversation</p>
+    <div className="flex flex-col h-full" style={{minHeight:0,fontFamily:FONT}}>
+
+      {/* ── header ── */}
+      <div className="flex items-center justify-between px-5 py-3.5 shrink-0" style={{borderBottom:"1px solid rgba(255,255,255,0.06)",background:"rgba(0,0,0,0.15)"}}>
+        <div className="flex items-center gap-3">
+          <div className="w-8 h-8 rounded-xl flex items-center justify-center" style={{background:"linear-gradient(135deg,rgba(99,102,241,0.2),rgba(139,92,246,0.12))",border:"1px solid rgba(99,102,241,0.25)"}}>
+            <MessageSquare size={14} className="text-indigo-300" strokeWidth={2}/>
+          </div>
+          <div>
+            <h2 className="text-[14px] font-black text-white leading-none">Team Chat</h2>
+            <p className="text-[10.5px] text-zinc-600 mt-0.5">Real-time project conversation</p>
+          </div>
+          {messages.length>0&&(
+            <span className="text-[10px] font-black px-2 py-0.5 rounded-full" style={{color:"#a5b4fc",background:"rgba(99,102,241,0.1)",border:"1px solid rgba(99,102,241,0.2)"}}>
+              {messages.length} messages
+            </span>
+          )}
         </div>
         <div className="flex items-center gap-2">
-          {/* Feature 3: AI Task Extractor toggle */}
           <button
-            onClick={() => { setShowExtractor((v) => !v); setSummaryShown(false); }}
-            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium border border-zinc-700 text-zinc-400 hover:border-violet-500/50 hover:text-violet-300 transition-all"
-          >
-            <Sparkle size={11} /> Tasks from text
+            onClick={()=>{setShowExt(v=>!v);setSumShow(false);}}
+            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-[11px] font-bold transition-all"
+            style={{background:showExt?"rgba(139,92,246,0.15)":"rgba(255,255,255,0.03)",border:`1px solid ${showExt?"rgba(139,92,246,0.35)":"rgba(255,255,255,0.08)"}`,color:showExt?"#c4b5fd":"#71717a"}}>
+            <Zap size={11}/> Tasks from text
           </button>
-          {/* Feature 2: Summarize chat */}
-          <button
-            onClick={() => { handleSummarize(); setShowExtractor(false); }}
-            disabled={summaryLoading}
-            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold
-              bg-gradient-to-br from-violet-600 to-indigo-600 text-white
-              hover:from-violet-500 hover:to-indigo-500 shadow-lg shadow-violet-900/30
-              disabled:opacity-60 disabled:cursor-not-allowed transition-all"
-          >
-            {summaryLoading
-              ? <span className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-              : <Sparkle size={11} />
-            }
-            Summarize
-          </button>
+          <AiBtn onClick={()=>{handleSummarize();setShowExt(false);}} loading={sumLoad} label="Summarize" small/>
         </div>
       </div>
 
-      {/* Feature 3: Task extractor panel */}
-      {showExtractor && (
-        <div className="mx-4 mt-3 rounded-xl border border-violet-500/25 bg-gradient-to-br from-violet-950/50 to-indigo-950/50 overflow-hidden shrink-0">
-          <div className="flex items-center gap-2 px-4 py-2.5 border-b border-violet-500/20">
-            <Sparkle size={11} />
-            <span className="text-xs font-semibold text-violet-300">AI Task Creator</span>
-            <span className="text-xs text-zinc-600 ml-1">— describe work in plain English</span>
-            <button onClick={() => setShowExtractor(false)} className="ml-auto text-zinc-600 hover:text-zinc-400">
-              <Icon name="x" size={12} />
-            </button>
+      {/* ── AI task extractor ── */}
+      {showExt&&(
+        <div className="mx-4 mt-3 mb-1 shrink-0 rounded-2xl overflow-hidden" style={{background:"linear-gradient(135deg,rgba(99,102,241,0.08),rgba(139,92,246,0.05))",border:"1px solid rgba(139,92,246,0.22)"}}>
+          <div className="flex items-center gap-2 px-4 py-2.5" style={{borderBottom:"1px solid rgba(139,92,246,0.12)",background:"rgba(139,92,246,0.05)"}}>
+            <Sparkles size={11} className="text-violet-400"/>
+            <span className="text-[11px] font-black uppercase tracking-widest text-violet-300">AI Task Creator</span>
+            <span className="text-[10px] text-zinc-600 ml-1">— describe work in plain English</span>
+            <button onClick={()=>setShowExt(false)} className="ml-auto w-5 h-5 rounded-md flex items-center justify-center text-zinc-600 hover:text-zinc-300 hover:bg-white/5 transition-all"><X size={11}/></button>
           </div>
-          <div className="p-3 space-y-3">
-            <textarea
-              value={extractInput}
-              onChange={(e) => setExtractInput(e.target.value)}
-              placeholder="e.g. We need to redesign the dashboard and fix the analytics graph bug"
-              rows={2}
-              className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-xs text-zinc-200 placeholder-zinc-600 focus:outline-none focus:border-violet-500/50 transition-colors resize-none"
-            />
+          <div className="p-3.5 space-y-3">
+            <textarea value={extInput} onChange={e=>setExtInput(e.target.value)}
+              placeholder="e.g. Redesign the dashboard UI and fix the payment bug in checkout"
+              rows={2} className="w-full rounded-xl px-3.5 py-2.5 text-[12.5px] text-zinc-200 placeholder-zinc-700 outline-none resize-none transition-all"
+              style={{background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.07)",fontFamily:FONT}}/>
             <div className="flex items-center gap-2">
-              <button
-                onClick={handleExtract}
-                disabled={extractLoading}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-violet-600 hover:bg-violet-500 text-white disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
-              >
-                {extractLoading
-                  ? <span className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                  : <Sparkle size={10} />
-                }
-                Extract Tasks
+              <button onClick={handleExtract} disabled={extLoad}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-black text-white disabled:opacity-60 transition-all"
+                style={{background:"linear-gradient(135deg,#7c3aed,#6366f1)"}}>
+                {extLoad?<Loader2 size={10} className="animate-spin"/>:<Sparkles size={10}/>} Extract
               </button>
-              {extracted.length > 0 && (
-                <button
-                  onClick={handleCreateExtracted}
-                  disabled={creating}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-emerald-600 hover:bg-emerald-500 text-white disabled:opacity-60 transition-colors"
-                >
-                  {creating
-                    ? <span className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                    : <Icon name="plus" size={11} />
-                  }
-                  Create {extracted.length} Task{extracted.length !== 1 ? "s" : ""}
+              {extracted.length>0&&(
+                <button onClick={handleCreateExtracted} disabled={creating}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-black text-white disabled:opacity-60 transition-all"
+                  style={{background:"linear-gradient(135deg,#059669,#047857)"}}>
+                  {creating?<Loader2 size={10} className="animate-spin"/>:<Plus size={10}/>}
+                  Create {extracted.length} task{extracted.length!==1?"s":""}
                 </button>
               )}
             </div>
-            {extracted.length > 0 && (
-              <div className="space-y-1.5 pt-1">
-                {extracted.map((t, i) => (
-                  <div key={i} className="flex items-center gap-2.5 py-1">
-                    <span className="text-violet-500">•</span>
-                    <span className="text-xs text-zinc-300 flex-1">{t.title}</span>
-                    <Badge variant={priorityVariant(t.priority)}>{t.priority}</Badge>
+            {extracted.length>0&&(
+              <div className="space-y-1.5 pt-1 border-t border-white/5">
+                {extracted.map((t,i)=>(
+                  <div key={i} className="flex items-center gap-2.5 py-1 px-1">
+                    <PriorityDot p={t.priority}/>
+                    <span className="text-[12px] text-zinc-300 flex-1">{t.title}</span>
+                    <span className="text-[10px] font-bold px-1.5 py-0.5 rounded" style={{color:PCOL[t.priority]||"#71717a",background:`${PCOL[t.priority]||"#71717a"}15`}}>{t.priority}</span>
                   </div>
                 ))}
               </div>
@@ -733,276 +721,291 @@ function ChatView({ projectId, members, onTaskCreated }) {
         </div>
       )}
 
-      {/* Feature 2: Chat summary panel */}
-      {summaryShown && (
-        <div className="mx-4 mt-3 shrink-0">
-          <AiPanel
-            title="Meeting / Chat Summary"
-            content={summary}
-            loading={summaryLoading}
-            onClose={() => setSummaryShown(false)}
-          />
-        </div>
-      )}
+      {/* ── AI summary panel ── */}
+      {sumShow&&<div className="mx-4 mt-3 shrink-0"><AiPanel title="Chat Summary" content={sumText} loading={sumLoad} onClose={()=>setSumShow(false)}/></div>}
 
-      {/* Messages */}
-      <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
+      {/* ── messages area ── */}
+      <div className="flex-1 overflow-y-auto px-4 py-4 space-y-1" style={{scrollbarWidth:"none"}}>
         {loading ? (
-          <div className="flex justify-center pt-8"><Spinner /></div>
-        ) : messages.length === 0 ? (
-          <Empty icon="message" title="No messages yet" desc="Start the conversation!" />
-        ) : messages.map((msg) => {
-          const isMe       = msg.senderId === user?.id || msg.sender_id === user?.id;
-          const senderName = msg.sender?.fullname || msg.senderName || "?";
-          return (
-            <div key={msg.id} className={`flex items-end gap-2 ${isMe ? "flex-row-reverse" : ""}`}>
-              <Avatar name={senderName} src={msg.sender?.profile} size={28} color={isMe ? "#6366f1" : "#f59e0b"} />
-              <div className={`max-w-xs flex flex-col gap-0.5 ${isMe ? "items-end" : "items-start"}`}>
-                {!isMe && <span className="text-xs font-medium text-zinc-500 px-1">{senderName}</span>}
-                <div className={`px-3 py-2 rounded-2xl text-sm leading-relaxed ${isMe ? "bg-indigo-600 text-white rounded-br-sm" : "bg-zinc-800 text-zinc-200 rounded-bl-sm"}`}>
-                  {(msg.content || msg.message || "").split(/(@\w+)/g).map((part, pi) =>
-                    part.startsWith("@")
-                      ? <span key={pi} className={`font-semibold ${isMe ? "text-indigo-200 bg-white/10" : "text-violet-300 bg-violet-500/15"} px-1 rounded`}>{part}</span>
-                      : part
+          <div className="flex justify-center pt-12"><Loader2 size={18} className="animate-spin text-zinc-600"/></div>
+        ) : messages.length===0 ? (
+          <div className="flex flex-col items-center justify-center h-full gap-4 pb-16">
+            <div className="w-14 h-14 rounded-2xl flex items-center justify-center" style={{background:"rgba(99,102,241,0.06)",border:"1px solid rgba(99,102,241,0.12)"}}>
+              <MessageSquare size={22} className="text-indigo-600" strokeWidth={1.5}/>
+            </div>
+            <div className="text-center">
+              <p className="text-[14px] font-bold text-zinc-500">No messages yet</p>
+              <p className="text-[12px] text-zinc-700 mt-1">Start the conversation below</p>
+            </div>
+          </div>
+        ) : (
+          messages.map((msg, msgIdx)=>{
+            const isMe   = msg.senderId===user?.id||msg.sender_id===user?.id;
+            const name   = msg.sender?.fullname||msg.senderName||"?";
+            const prevMsg= messages[msgIdx-1];
+            const isSameAuthor = prevMsg&&(prevMsg.senderId===msg.senderId||prevMsg.sender_id===msg.sender_id);
+            const showAvatar   = !isSameAuthor;
+            const msgContent   = msg.content||msg.message||"";
+
+            return (
+              <div key={msg.id} className={`flex items-end gap-2 ${isMe?"flex-row-reverse":"flex-row"} ${isSameAuthor?"mt-0.5":"mt-4"}`}>
+                {/* avatar — hidden when same consecutive author, but space reserved */}
+                <div className="shrink-0 w-7" style={{visibility:showAvatar?"visible":"hidden"}}>
+                  <Avatar name={name} src={msg.sender?.profile} size={28} color={isMe?"#6366f1":"#f59e0b"}/>
+                </div>
+
+                <div className={`flex flex-col gap-0.5 max-w-[68%] ${isMe?"items-end":"items-start"}`}>
+                  {/* sender name — only on first of a group */}
+                  {!isMe&&showAvatar&&(
+                    <span className="text-[10.5px] font-semibold text-zinc-500 px-1 mb-0.5">{name}</span>
+                  )}
+
+                  {/* bubble */}
+                  <div
+                    className={`px-3.5 py-2.5 text-[13px] leading-relaxed break-words ${
+                      isMe
+                        ? "rounded-2xl rounded-br-md text-white"
+                        : "rounded-2xl rounded-bl-md text-zinc-200"
+                    }`}
+                    style={{
+                      background: isMe
+                        ? "linear-gradient(135deg,#5b5bd6,#7c3aed)"
+                        : "rgba(255,255,255,0.06)",
+                      border: isMe ? "none" : "1px solid rgba(255,255,255,0.08)",
+                      boxShadow: isMe ? "0 2px 12px rgba(99,102,241,0.25)" : "none",
+                    }}
+                  >
+                    {msgContent.split(/(@\w+)/g).map((part,pi)=>
+                      part.startsWith("@")
+                        ? <span key={pi} className="font-bold rounded-sm px-0.5"
+                            style={{color:isMe?"rgba(255,255,255,0.95)":"#a5b4fc",background:isMe?"rgba(255,255,255,0.15)":"rgba(99,102,241,0.2)"}}>
+                            {part}
+                          </span>
+                        : part
+                    )}
+                  </div>
+
+                  {/* timestamp — only last of a group */}
+                  {(!messages[msgIdx+1]||(messages[msgIdx+1].senderId!==msg.senderId&&messages[msgIdx+1].sender_id!==msg.sender_id))&&(
+                    <span className="text-[10px] text-zinc-700 px-1">{timeAgo(msg.createdAt)}</span>
                   )}
                 </div>
-                <span className="text-xs text-zinc-700 px-1">{timeAgo(msg.createdAt)}</span>
               </div>
+            );
+          })
+        )}
+
+        {/* typing indicator */}
+        {typing.length>0&&(
+          <div className="flex items-end gap-2 mt-4">
+            <div className="w-7 shrink-0"/>
+            <div className="flex items-center gap-2">
+              <div className="flex gap-1 px-3.5 py-2.5 rounded-2xl rounded-bl-md" style={{background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.08)"}}>
+                {[0,160,320].map(d=>(
+                  <span key={d} className="w-1.5 h-1.5 rounded-full bg-zinc-500 animate-bounce" style={{animationDelay:`${d}ms`}}/>
+                ))}
+              </div>
+              <span className="text-[10.5px] text-zinc-600 italic">{typing.join(", ")} typing…</span>
             </div>
-          );
-        })}
-        {typing.length > 0 && (
-          <div className="flex items-center gap-2">
-            <div className="flex gap-1 px-3 py-2 bg-zinc-800 rounded-2xl rounded-bl-sm">
-              {[0,150,300].map((d) => <span key={d} className="w-1.5 h-1.5 bg-zinc-500 rounded-full animate-bounce" style={{ animationDelay: `${d}ms` }} />)}
-            </div>
-            <span className="text-xs text-zinc-600">{typing.join(", ")} typing…</span>
           </div>
         )}
-        <div ref={bottomRef} />
+        <div ref={bottomRef}/>
       </div>
 
-      {/* Input with @mention autocomplete */}
-      <div className="px-6 py-4 border-t border-zinc-800 shrink-0">
-        {/* Mention dropdown */}
-        {mentionQuery !== null && mentionSuggestions.length > 0 && (
-          <div className="mb-2 bg-zinc-900 border border-zinc-700 rounded-xl overflow-hidden shadow-2xl">
-            {mentionSuggestions.map((m, i) => (
-              <button
-                key={m.emailuser}
-                onClick={() => insertMention(m)}
-                className={`w-full flex items-center gap-2.5 px-4 py-2.5 text-left transition-colors ${i === mentionIndex ? "bg-indigo-600/20 border-l-2 border-indigo-500" : "hover:bg-zinc-800"}`}
-              >
-                <Avatar name={m.fullname || m.emailuser} size={24} color="#6366f1" />
+      {/* ── input area ── */}
+      <div className="px-4 py-3 shrink-0" style={{borderTop:"1px solid rgba(255,255,255,0.06)",background:"rgba(0,0,0,0.1)"}}>
+        {/* @mention dropdown */}
+        {mentionQ!==null&&mentionSug.length>0&&(
+          <div className="mb-2 rounded-2xl overflow-hidden shadow-2xl" style={{background:"#0f0f18",border:"1px solid rgba(255,255,255,0.1)",boxShadow:"0 -8px 32px rgba(0,0,0,0.5)"}}>
+            {mentionSug.map((m,i)=>(
+              <button key={m.emailuser} onClick={()=>insertMention(m)}
+                className="w-full flex items-center gap-2.5 px-4 py-2.5 text-left transition-all"
+                style={{background:i===mentionIdx?"rgba(99,102,241,0.12)":"transparent",borderLeft:`2px solid ${i===mentionIdx?"#6366f1":"transparent"}`}}>
+                <Avatar name={m.fullname||m.emailuser} size={24} color="#6366f1"/>
                 <div>
-                  <p className="text-xs font-medium text-zinc-200">{m.fullname || m.emailuser.split("@")[0]}</p>
-                  <p className="text-xs text-zinc-600">{m.emailuser}</p>
+                  <p className="text-[12px] font-semibold text-zinc-200">{m.fullname||m.emailuser.split("@")[0]}</p>
+                  <p className="text-[10.5px] text-zinc-600">{m.emailuser}</p>
                 </div>
               </button>
             ))}
           </div>
         )}
-        <div className="flex gap-2">
-          <div className="flex-1 relative">
-            <input
-              ref={inputRef}
-              value={input}
-              onChange={(e) => handleInput(e.target.value)}
-              onKeyDown={handleKeyDown}
-              placeholder="Message the team… type @ to mention someone"
-              className="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-2.5 text-sm text-zinc-200 placeholder-zinc-600 focus:outline-none focus:border-indigo-500/70 transition-colors"
-            />
-          </div>
-          <button onClick={send} className="px-3.5 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl transition-colors">
-            <Icon name="send" size={16} />
+
+        {/* composer */}
+        <div className="flex items-end gap-2 p-2 rounded-2xl" style={{background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.09)"}}>
+          <input
+            ref={inputRef}
+            value={input}
+            onChange={e=>handleInput(e.target.value)}
+            onKeyDown={handleKeyDown}
+            placeholder="Message the team… type @ to mention someone"
+            className="flex-1 bg-transparent px-2 py-1.5 text-[13px] text-zinc-200 placeholder-zinc-700 outline-none leading-relaxed"
+            style={{fontFamily:FONT}}
+          />
+          <button
+            onClick={send}
+            disabled={!input.trim()}
+            className="w-8 h-8 rounded-xl flex items-center justify-center text-white disabled:opacity-30 transition-all hover:scale-105 active:scale-95 shrink-0"
+            style={{background:input.trim()?"linear-gradient(135deg,#5b5bd6,#7c3aed)":"rgba(255,255,255,0.06)",boxShadow:input.trim()?"0 4px 12px rgba(99,102,241,0.4)":"none"}}>
+            <Send size={13}/>
           </button>
         </div>
-        <p className="text-xs text-zinc-700 mt-1.5 pl-1">Type @ to mention a team member</p>
+        <p className="text-[10px] text-zinc-800 mt-1.5 px-1">Enter to send · Shift+Enter for new line</p>
       </div>
     </div>
   );
 }
 
-// ─── FILES VIEW ───────────────────────────────────────────────────────────────
+/* ─── FILES VIEW ──────────────────────────────────────────────────────────── */
 function FilesView({ projectId, tasks }) {
   const { user } = useAuth();
-  const [files,      setFiles]      = useState([]);
-  const [loading,    setLoading]    = useState(true);
-  const [uploading,  setUploading]  = useState(false);
-  const [showUpload, setShowUpload] = useState(false);
-  const [taskId,     setTaskId]     = useState("");
+  const [files,     setFiles]     = useState([]);
+  const [loading,   setLoading]   = useState(true);
+  const [uploading, setUploading] = useState(false);
+  const [showUp,    setShowUp]    = useState(false);
+  const [taskId,    setTaskId]    = useState("");
   const fileRef = useRef(null);
 
-  const load = useCallback(() => {
-    api.files.getByProject(projectId)
-      .then((d) => setFiles(d.files || []))
-      .catch(console.error)
-      .finally(() => setLoading(false));
-  }, [projectId]);
+  const load = useCallback(()=>{
+    api.files.getByProject(projectId).then(d=>setFiles(d.files||[])).catch(console.error).finally(()=>setLoading(false));
+  },[projectId]);
+  useEffect(()=>{load();},[load]);
 
-  useEffect(() => { load(); }, [load]);
-
-  const handleUpload = async (e) => {
-    const file = e.target.files?.[0];
-    if (!file || !taskId) { showToast("Select a task first", "warning"); return; }
+  const handleUpload = async e => {
+    const file=e.target.files?.[0];
+    if(!file||!taskId){showToast("Select a task first","warning");return;}
     setUploading(true);
-    const fd = new FormData();
-    fd.append("file", file);
-    try {
-      await api.files.upload(user.id, projectId, taskId, fd);
-      showToast("File uploaded");
-      setShowUpload(false);
-      load();
-    } catch (err) { showToast(err.message, "error"); }
-    finally { setUploading(false); }
+    const fd=new FormData(); fd.append("file",file);
+    try{await api.files.upload(user.id,projectId,taskId,fd);showToast("File uploaded");setShowUp(false);load();}
+    catch(err){showToast(err.message,"error");}
+    finally{setUploading(false);}
   };
 
-  const deleteFile = async (fileId) => {
-    if (!confirm("Delete this file?")) return;
-    try {
-      await api.files.delete(fileId, user.id);
-      showToast("File deleted");
-      load();
-    } catch (err) { showToast(err.message, "error"); }
+  const deleteFile = async id=>{
+    if(!confirm("Delete this file?")) return;
+    try{await api.files.delete(id,user.id);showToast("Deleted");load();}
+    catch(err){showToast(err.message,"error");}
   };
 
-  const extColor = (t) => t?.includes("pdf") ? "#ef4444" : t?.includes("image") ? "#6366f1" : "#f59e0b";
-  const ext      = (name) => (name || "").split(".").pop()?.toUpperCase().slice(0, 4) || "FILE";
-  const fmtSize  = (b) => b > 1e6 ? `${(b / 1e6).toFixed(1)} MB` : b ? `${(b / 1e3).toFixed(0)} KB` : "";
+  const extColor=t=>t?.includes("pdf")?"#ef4444":t?.includes("image")?"#6366f1":"#f59e0b";
+  const ext=name=>(name||"").split(".").pop()?.toUpperCase().slice(0,4)||"FILE";
+  const fmtSize=b=>b>1e6?`${(b/1e6).toFixed(1)} MB`:b?`${(b/1e3).toFixed(0)} KB`:"";
 
   return (
     <div className="p-6">
-      <div className="flex items-center justify-between mb-6">
-        <h2 className="text-sm font-semibold text-zinc-200">Files</h2>
-        <Button size="sm" icon="upload" onClick={() => setShowUpload(true)}>Upload</Button>
-      </div>
-      {showUpload && (
-        <div className="mb-5 p-4 bg-zinc-900 border border-zinc-700 rounded-xl space-y-3">
-          <Select label="Attach to task" value={taskId} onChange={(e) => setTaskId(e.target.value)}>
-            <option value="">Select task...</option>
-            {tasks.map((t) => <option key={t.id} value={t.id}>{t.title}</option>)}
-          </Select>
-          <div>
-            <input ref={fileRef} type="file" className="hidden" onChange={handleUpload} />
-            <Button loading={uploading} onClick={() => fileRef.current?.click()}>Choose File</Button>
-            <Button variant="secondary" className="ml-2" onClick={() => setShowUpload(false)}>Cancel</Button>
+      <SectionHeader title="Files" count={files.length} action={
+        <button onClick={()=>setShowUp(v=>!v)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[12px] font-black text-zinc-300 transition-all" style={{background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.08)"}}>
+          <Upload size={12}/> Upload
+        </button>
+      }/>
+
+      {showUp&&(
+        <div className="mb-5 p-4 rounded-2xl space-y-3" style={{background:"rgba(255,255,255,0.02)",border:"1px solid rgba(255,255,255,0.08)"}}>
+          <div className="relative">
+            <select value={taskId} onChange={e=>setTaskId(e.target.value)} className="w-full appearance-none px-3.5 py-2.5 pr-8 rounded-xl text-[13px] text-zinc-200 outline-none" style={{background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.08)",fontFamily:FONT}}>
+              <option value="" style={{background:"#1a1a2e"}}>Select task to attach to…</option>
+              {tasks.map(t=><option key={t.id} value={t.id} style={{background:"#1a1a2e"}}>{t.title}</option>)}
+            </select>
+          </div>
+          <div className="flex gap-2">
+            <input ref={fileRef} type="file" className="hidden" onChange={handleUpload}/>
+            <button onClick={()=>fileRef.current?.click()} disabled={uploading||!taskId} className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-[12px] font-black text-white disabled:opacity-50" style={{background:"linear-gradient(135deg,#6366f1,#7c3aed)"}}>
+              {uploading?<Loader2 size={12} className="animate-spin"/>:<Upload size={12}/>} {uploading?"Uploading…":"Choose File"}
+            </button>
+            <button onClick={()=>setShowUp(false)} className="px-3 py-2 rounded-xl text-[12px] text-zinc-500 hover:text-zinc-200 transition-colors" style={{border:"1px solid rgba(255,255,255,0.07)"}}>Cancel</button>
           </div>
         </div>
       )}
-      {loading ? <div className="flex justify-center py-16"><Spinner /></div>
-        : files.length === 0 ? (
-          <Empty icon="paperclip" title="No files yet" action={<Button size="sm" icon="upload" onClick={() => setShowUpload(true)}>Upload</Button>} />
+
+      {loading ? <div className="flex justify-center py-16"><Loader2 size={20} className="animate-spin text-zinc-600"/></div>
+        : files.length===0 ? (
+          <div className="flex flex-col items-center justify-center py-20 gap-3">
+            <div className="w-12 h-12 rounded-2xl flex items-center justify-center" style={{background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.07)"}}>
+              <Paperclip size={18} className="text-zinc-700"/>
+            </div>
+            <p className="text-[13px] text-zinc-600 font-medium">No files yet</p>
+            <button onClick={()=>setShowUp(true)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[12px] font-semibold text-zinc-300 transition-all" style={{background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.08)"}}>
+              <Upload size={11}/> Upload first file
+            </button>
+          </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-            {files.map((f) => (
-              <div key={f.id} className="bg-zinc-900 border border-zinc-800 hover:border-zinc-700 rounded-xl p-4 transition-colors group">
-                <div className="flex items-start gap-3 mb-3">
-                  <div className="w-10 h-10 rounded-lg flex items-center justify-center text-xs font-bold shrink-0" style={{ background: extColor(f.fileType) + "22", border: `1px solid ${extColor(f.fileType)}33`, color: extColor(f.fileType) }}>
-                    {ext(f.fileName || f.fileUrl)}
+            {files.map(f=>{
+              const c=extColor(f.fileType);
+              return (
+                <div key={f.id} className="group rounded-2xl p-4 transition-all hover:-translate-y-0.5" style={{background:"rgba(255,255,255,0.02)",border:"1px solid rgba(255,255,255,0.07)",boxShadow:"0 2px 12px rgba(0,0,0,0.3)"}}>
+                  <div className="flex items-start gap-3 mb-3">
+                    <div className="w-10 h-10 rounded-xl flex items-center justify-center text-[11px] font-black shrink-0" style={{background:`${c}18`,border:`1px solid ${c}28`,color:c}}>{ext(f.fileName||f.fileUrl)}</div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-[13px] font-semibold text-zinc-200 truncate">{f.fileName||"File"}</p>
+                      <p className="text-[11px] text-zinc-600 mt-0.5">{fmtSize(f.fileSize)}</p>
+                    </div>
                   </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-zinc-200 truncate">{f.fileName || "File"}</p>
-                    <p className="text-xs text-zinc-500">{fmtSize(f.fileSize)}</p>
+                  <div className="text-[11px] text-zinc-700 space-y-1 mb-3">
+                    <p>Task: <span className="text-zinc-500">{f.taskName||"—"}</span></p>
+                    <p>By: <span className="text-zinc-500">{f.uploaderName||"—"}</span> · {formatDate(f.uploadedAt)}</p>
+                  </div>
+                  <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity pt-2.5" style={{borderTop:"1px solid rgba(255,255,255,0.05)"}}>
+                    <a href={f.fileUrl} target="_blank" rel="noreferrer" className="flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-xl text-[11px] font-semibold text-zinc-400 hover:text-white transition-colors" style={{background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.07)"}}>
+                      Download
+                    </a>
+                    <button onClick={()=>deleteFile(f.id)} className="w-8 h-8 rounded-xl flex items-center justify-center text-zinc-700 hover:text-red-400 hover:bg-red-500/10 transition-all">
+                      <Trash2 size={12}/>
+                    </button>
                   </div>
                 </div>
-                <div className="text-xs text-zinc-600 space-y-1">
-                  <p>Task: <span className="text-zinc-500">{f.taskName || "—"}</span></p>
-                  <p>By: <span className="text-zinc-500">{f.uploaderName || "—"}</span></p>
-                  <p>{formatDate(f.uploadedAt)}</p>
-                </div>
-                <div className="flex gap-2 mt-3 pt-3 border-t border-zinc-800 opacity-0 group-hover:opacity-100 transition-opacity">
-                  <a href={f.fileUrl} target="_blank" rel="noreferrer" className="flex-1 text-xs text-zinc-400 hover:text-white transition-colors py-1 hover:bg-zinc-800 rounded-md text-center">Download</a>
-                  <button onClick={() => deleteFile(f.id)} className="text-xs text-red-500 hover:text-red-400 transition-colors py-1 px-2 hover:bg-zinc-800 rounded-md">
-                    <Icon name="trash" size={12} />
-                  </button>
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
-        )}
+        )
+      }
     </div>
   );
 }
 
-// ─── ACTIVITY VIEW + AI STANDUP REPORT (Feature 5) ───────────────────────────
+/* ─── ACTIVITY VIEW ───────────────────────────────────────────────────────── */
 function ActivityView({ projectId }) {
-  const [logs,   setLogs]   = useState([]);
-  const [loading,setLoading]= useState(true);
+  const [logs,    setLogs]    = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [standup, setStandup] = useState("");
+  const [stdLoad, setStdLoad] = useState(false);
+  const [stdShow, setStdShow] = useState(false);
   const colors = ["#6366f1","#f59e0b","#10b981","#ec4899","#3b82f6","#8b5cf6"];
 
-  // AI standup state
-  const [standup,        setStandup]        = useState("");
-  const [standupLoading, setStandupLoading] = useState(false);
-  const [standupShown,   setStandupShown]   = useState(false);
-
-  useEffect(() => {
-    api.activity.getByProject(projectId)
-      .then((d) => setLogs(d.logs || []))
-      .catch(console.error)
-      .finally(() => setLoading(false));
-  }, [projectId]);
+  useEffect(()=>{ api.activity.getByProject(projectId).then(d=>setLogs(d.logs||[])).catch(console.error).finally(()=>setLoading(false)); },[projectId]);
 
   const handleStandup = async () => {
-    if (!logs.length) { showToast("No activity logs yet", "warning"); return; }
-    setStandupShown(true);
-    setStandupLoading(true);
-    try {
-      const text = await generateStandupReport(logs);
-      setStandup(text);
-    } catch (e) {
-      setStandup("Could not generate standup: " + e.message);
-    } finally {
-      setStandupLoading(false);
-    }
+    if (!logs.length){showToast("No activity logs yet","warning");return;}
+    setStdShow(true); setStdLoad(true);
+    try{setStandup(await generateStandupReport(logs));}
+    catch(e){setStandup("Could not generate: "+e.message);}
+    finally{setStdLoad(false);}
   };
 
-  if (loading) return <div className="flex justify-center py-16"><Spinner /></div>;
+  if (loading) return <div className="flex justify-center py-24"><Loader2 size={20} className="animate-spin text-zinc-600"/></div>;
 
   return (
     <div className="p-6 max-w-2xl">
-      {/* Header + AI button */}
-      <div className="flex items-center justify-between mb-4">
-        <h2 className="text-sm font-semibold text-zinc-200">Activity Log</h2>
-        <button
-          onClick={handleStandup}
-          disabled={standupLoading}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold
-            bg-gradient-to-br from-violet-600 to-indigo-600 text-white
-            hover:from-violet-500 hover:to-indigo-500 shadow-lg shadow-violet-900/30
-            disabled:opacity-60 disabled:cursor-not-allowed transition-all"
-        >
-          {standupLoading
-            ? <span className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-            : <Sparkle />
-          }
-          Generate Standup
-        </button>
-      </div>
-
-      {/* AI standup panel */}
-      {standupShown && (
-        <div className="mb-4">
-          <AiPanel
-            title="Daily Standup Report"
-            content={standup}
-            loading={standupLoading}
-            onClose={() => setStandupShown(false)}
-          />
+      <SectionHeader title="Activity" count={logs.length} action={<AiBtn onClick={handleStandup} loading={stdLoad} label="Generate Standup"/>}/>
+      {stdShow&&<AiPanel title="Daily Standup" content={standup} loading={stdLoad} onClose={()=>setStdShow(false)}/>}
+      {logs.length===0 ? (
+        <div className="flex flex-col items-center justify-center py-20 gap-3 opacity-50">
+          <Activity size={28} className="text-zinc-700"/>
+          <p className="text-[13px] text-zinc-600 font-medium">No activity yet</p>
         </div>
-      )}
-
-      {/* Activity log */}
-      {logs.length === 0 ? <Empty icon="activity" title="No activity yet" /> : (
-        <div className="space-y-3">
-          {logs.map((a, i) => (
-            <div key={a.id} className="flex items-start gap-3 p-3 bg-zinc-900 border border-zinc-800 rounded-xl">
-              <Avatar name={a.user?.fullname || "?"} size={28} color={colors[i % colors.length]} />
-              <div className="flex-1">
-                <p className="text-xs text-zinc-300">
-                  <span className="font-medium text-zinc-200">{a.user?.fullname}</span>{" "}
-                  {actionLabel(a.action, a.meta)}
+      ) : (
+        <div className="space-y-2">
+          {logs.map((a,i)=>(
+            <div key={a.id} className="flex items-start gap-3.5 p-3.5 rounded-2xl transition-all" style={{background:"rgba(255,255,255,0.02)",border:"1px solid rgba(255,255,255,0.06)"}}>
+              <div className="relative shrink-0">
+                <Avatar name={a.user?.fullname||"?"} size={28} color={colors[i%colors.length]}/>
+                <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full" style={{background:colors[i%colors.length]+"30",border:`1px solid ${colors[i%colors.length]}60`}}/>
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-[12.5px] text-zinc-300 leading-snug">
+                  <span className="font-bold text-zinc-100">{a.user?.fullname}</span>{" "}{actionLabel(a.action,a.meta)}
                 </p>
-                <p className="text-xs text-zinc-600 mt-0.5">{timeAgo(a.createdAt)}</p>
+                <p className="text-[11px] text-zinc-600 mt-0.5">{timeAgo(a.createdAt)}</p>
               </div>
             </div>
           ))}
@@ -1012,157 +1015,146 @@ function ActivityView({ projectId }) {
   );
 }
 
-// ─── GANTT VIEW ───────────────────────────────────────────────────────────────
+/* ─── GANTT VIEW ──────────────────────────────────────────────────────────── */
 function GanttView({ tasks, members, projectId, onTaskUpdated }) {
   const { user } = useAuth();
-  const [editTask,    setEditTask]    = useState(null);
-  const [detailTask,  setDetailTask]  = useState(null);
-  const [hoveredTask, setHoveredTask] = useState(null);
-  const [viewMode,    setViewMode]    = useState("month"); // "month" | "week"
+  const [editTask,   setEditTask]   = useState(null);
+  const [detailTask, setDetailTask] = useState(null);
+  const [hovered,    setHovered]    = useState(null);
+  const [viewMode,   setViewMode]   = useState("month");
 
-  // Only tasks with both dates
-  const validTasks = tasks.filter((t) => t.startDate && t.dueDate);
+  const valid = tasks.filter(t=>t.startDate&&t.dueDate);
+  const allDates = valid.flatMap(t=>[new Date(t.startDate),new Date(t.dueDate)]);
+  const minD = allDates.length?new Date(Math.min(...allDates)):new Date();
+  const maxD = allDates.length?new Date(Math.max(...allDates)):new Date(Date.now()+30*864e5);
+  const ws = new Date(minD); ws.setDate(ws.getDate()-4);
+  const we = new Date(maxD); we.setDate(we.getDate()+4);
+  const totalDays = Math.max(1,Math.ceil((we-ws)/864e5));
 
-  // ── Compute calendar window ───────────────────────────────────────────────
-  const allDates  = validTasks.flatMap((t) => [new Date(t.startDate), new Date(t.dueDate)]);
-  const minDate   = allDates.length ? new Date(Math.min(...allDates)) : new Date();
-  const maxDate   = allDates.length ? new Date(Math.max(...allDates)) : new Date(Date.now() + 30 * 86400000);
+  // week=48px per day gives enough breathing room; month=32px
+  const DAY_W  = viewMode==="week" ? 48 : 32;
+  const ROW_H  = 52;
+  const HDR_H1 = 28; // month row
+  const HDR_H2 = 28; // day row
+  const LBL_W  = 240;
+  const today  = dayStart(new Date());
 
-  // Expand window by 3 days on each side for breathing room
-  const windowStart = new Date(minDate); windowStart.setDate(windowStart.getDate() - 3);
-  const windowEnd   = new Date(maxDate); windowEnd.setDate(windowEnd.getDate() + 3);
-  const totalDays   = Math.max(1, Math.ceil((windowEnd - windowStart) / 86400000));
+  const days = Array.from({length:totalDays},(_,i)=>{ const d=new Date(ws); d.setDate(d.getDate()+i); return d; });
+  const todayLeft = Math.floor((today-dayStart(ws))/864e5)*DAY_W;
 
-  // ── Generate column headers (days) ───────────────────────────────────────
-  const DAY_PX    = viewMode === "week" ? 40 : 28;
-  const LABEL_W   = 220;
-  const totalW    = totalDays * DAY_PX;
-  const today     = dayStart(new Date());
-
-  const days = Array.from({ length: totalDays }, (_, i) => {
-    const d = new Date(windowStart); d.setDate(d.getDate() + i);
-    return d;
+  // month groups for header
+  const months = [];
+  let curM=null;
+  days.forEach((d,i)=>{
+    const lbl=d.toLocaleDateString("en-US",{month:"long",year:"numeric"});
+    if(lbl!==curM){months.push({label:lbl,start:i,count:1});curM=lbl;}
+    else months[months.length-1].count++;
   });
 
-  // ── Bar position helpers ──────────────────────────────────────────────────
-  const taskLeft  = (t) => Math.max(0, Math.floor((dayStart(t.startDate) - dayStart(windowStart)) / 86400000)) * DAY_PX;
-  const taskWidth = (t) => {
-    const s = dayStart(t.startDate);
-    const e = dayStart(t.dueDate);
-    return Math.max(DAY_PX, Math.ceil((e - s) / 86400000 + 1) * DAY_PX);
+  const barColor = t => {
+    if (t.mark_complete)              return { bg:"#10b981", glow:"rgba(16,185,129,0.4)" };
+    if (isOverdue(t))                 return { bg:"#ef4444", glow:"rgba(239,68,68,0.4)" };
+    if (isDueSoon(t))                 return { bg:"#f59e0b", glow:"rgba(245,158,11,0.4)" };
+    if (t.status==="In Review")       return { bg:"#8b5cf6", glow:"rgba(139,92,246,0.4)" };
+    if (t.status==="In Progress")     return { bg:"#3b82f6", glow:"rgba(59,130,246,0.4)" };
+    return { bg:"#6366f1", glow:"rgba(99,102,241,0.4)" };
   };
 
-  // ── Today marker position ─────────────────────────────────────────────────
-  const todayLeft = Math.floor((today - dayStart(windowStart)) / 86400000) * DAY_PX;
+  const taskLeft  = t => Math.max(0, Math.floor((dayStart(t.startDate)-dayStart(ws))/864e5)) * DAY_W;
+  const taskWidth = t => Math.max(DAY_W*1.5, (Math.floor((dayStart(t.dueDate)-dayStart(t.startDate))/864e5)+1)*DAY_W);
 
-  // ── Group tasks by status for color ──────────────────────────────────────
-  const barColor = (task) => {
-    if (task.mark_complete)          return { bg: "#10b981", border: "#059669" };
-    if (isOverdue(task))             return { bg: "#ef4444", border: "#dc2626" };
-    if (isDueSoon(task))             return { bg: "#f59e0b", border: "#d97706" };
-    if (task.status === "In Review") return { bg: "#8b5cf6", border: "#7c3aed" };
-    if (task.status === "In Progress") return { bg: "#3b82f6", border: "#2563eb" };
-    return { bg: "#6366f1", border: "#4f46e5" };
-  };
+  const LEGEND = [
+    {color:"#6366f1",label:"Todo"},
+    {color:"#3b82f6",label:"In Progress"},
+    {color:"#8b5cf6",label:"In Review"},
+    {color:"#10b981",label:"Done"},
+    {color:"#ef4444",label:"Overdue"},
+    {color:"#f59e0b",label:"Due soon"},
+  ];
 
-  const assigneeInitial = (t) => (t.assignee_email || "?")[0].toUpperCase();
-
-  // ── Month groupings for header ────────────────────────────────────────────
-  const monthGroups = [];
-  let currentMonth  = null;
-  days.forEach((d, i) => {
-    const mLabel = d.toLocaleDateString("en-US", { month: "short", year: "2-digit" });
-    if (mLabel !== currentMonth) {
-      monthGroups.push({ label: mLabel, startIdx: i, count: 1 });
-      currentMonth = mLabel;
-    } else {
-      monthGroups[monthGroups.length - 1].count++;
-    }
-  });
-
-  if (!validTasks.length) {
-    return (
-      <div className="p-6 flex flex-col items-center justify-center py-20">
-        <div className="w-14 h-14 rounded-2xl bg-zinc-800/60 flex items-center justify-center mb-4">
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#6366f1" strokeWidth="1.5">
-            <rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/>
-            <line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>
-          </svg>
-        </div>
-        <p className="text-sm text-zinc-400 font-medium mb-1">No tasks with dates yet</p>
-        <p className="text-xs text-zinc-600">Add start and due dates to tasks to see them on the Gantt chart</p>
+  if (!valid.length) return (
+    <div className="flex flex-col items-center justify-center py-28 gap-4">
+      <div className="w-14 h-14 rounded-2xl flex items-center justify-center" style={{background:"rgba(99,102,241,0.08)",border:"1px solid rgba(99,102,241,0.15)"}}>
+        <GitBranch size={22} className="text-indigo-500" strokeWidth={1.5}/>
       </div>
-    );
-  }
+      <div className="text-center">
+        <p className="text-[14px] font-bold text-zinc-400">No tasks with dates yet</p>
+        <p className="text-[12px] text-zinc-700 mt-1">Add start & due dates to tasks to visualize the timeline</p>
+      </div>
+    </div>
+  );
 
   return (
-    <div className="flex flex-col h-full">
-      {/* Toolbar */}
-      <div className="flex items-center justify-between px-6 py-3 border-b border-zinc-800 shrink-0">
+    <div className="flex flex-col h-full" style={{fontFamily:FONT}}>
+
+      {/* ── toolbar ── */}
+      <div className="flex items-center justify-between px-5 py-3 shrink-0" style={{borderBottom:"1px solid rgba(255,255,255,0.06)",background:"rgba(0,0,0,0.15)"}}>
         <div className="flex items-center gap-3">
-          <h2 className="text-sm font-semibold text-zinc-200">Timeline</h2>
-          <span className="text-xs text-zinc-600">{validTasks.length} tasks</span>
+          <h2 className="text-[14px] font-black text-white">Timeline</h2>
+          <span className="text-[10px] font-black px-2 py-0.5 rounded-full" style={{color:"#a5b4fc",background:"rgba(99,102,241,0.12)",border:"1px solid rgba(99,102,241,0.2)"}}>{valid.length} tasks</span>
         </div>
-        <div className="flex items-center gap-3">
-          {/* Legend */}
-          <div className="hidden sm:flex items-center gap-3 text-xs text-zinc-600">
-            {[
-              { color: "#6366f1", label: "Todo"        },
-              { color: "#3b82f6", label: "In Progress" },
-              { color: "#8b5cf6", label: "In Review"   },
-              { color: "#10b981", label: "Done"        },
-              { color: "#ef4444", label: "Overdue"     },
-              { color: "#f59e0b", label: "Due soon"    },
-            ].map((l) => (
+        <div className="flex items-center gap-4">
+          {/* legend */}
+          <div className="hidden lg:flex items-center gap-3">
+            {LEGEND.map(l=>(
               <div key={l.label} className="flex items-center gap-1.5">
-                <div className="w-2.5 h-2.5 rounded-sm" style={{ background: l.color }} />
-                <span>{l.label}</span>
+                <div className="w-2.5 h-2.5 rounded-[3px]" style={{background:l.color}}/>
+                <span className="text-[10.5px] text-zinc-500">{l.label}</span>
               </div>
             ))}
           </div>
-          {/* View toggle */}
-          <div className="flex items-center bg-zinc-800 rounded-lg p-0.5">
-            {["week", "month"].map((m) => (
-              <button key={m} onClick={() => setViewMode(m)}
-                className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors capitalize ${viewMode === m ? "bg-zinc-700 text-zinc-200" : "text-zinc-500 hover:text-zinc-300"}`}>
-                {m}
+          {/* view toggle */}
+          <div className="flex items-center rounded-lg p-0.5 gap-0.5" style={{background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.07)"}}>
+            {[{v:"week",label:"Week"},{v:"month",label:"Month"}].map(({v,label})=>(
+              <button key={v} onClick={()=>setViewMode(v)}
+                className="px-3 py-1 rounded-md text-[11px] font-bold transition-all"
+                style={{background:viewMode===v?"rgba(99,102,241,0.2)":"transparent",color:viewMode===v?"#a5b4fc":"#52525b",border:viewMode===v?"1px solid rgba(99,102,241,0.3)":"1px solid transparent"}}>
+                {label}
               </button>
             ))}
           </div>
         </div>
       </div>
 
-      {/* Gantt grid */}
-      <div className="flex-1 overflow-auto">
-        <div style={{ minWidth: LABEL_W + totalW + 32 }}>
+      {/* ── scrollable grid ── */}
+      <div className="flex-1 overflow-auto" style={{scrollbarWidth:"thin",scrollbarColor:"rgba(255,255,255,0.08) transparent"}}>
+        <div style={{minWidth:LBL_W+totalDays*DAY_W}}>
 
-          {/* Header row */}
-          <div className="flex sticky top-0 z-10 bg-zinc-950 border-b border-zinc-800">
-            {/* Task label column header */}
-            <div className="shrink-0 border-r border-zinc-800 px-4 py-2 flex items-center" style={{ width: LABEL_W }}>
-              <span className="text-xs font-semibold text-zinc-500 uppercase tracking-wider">Task</span>
+          {/* ── HEADER ── */}
+          <div className="flex sticky top-0 z-20" style={{background:"#0b0b12"}}>
+            {/* task label col header */}
+            <div className="shrink-0 flex items-end px-4 pb-2" style={{width:LBL_W,height:HDR_H1+HDR_H2,borderRight:"1px solid rgba(255,255,255,0.06)",borderBottom:"1px solid rgba(255,255,255,0.08)"}}>
+              <span className="text-[10px] font-black uppercase tracking-[0.15em] text-zinc-700">Task</span>
             </div>
-            {/* Day columns header */}
-            <div className="relative" style={{ width: totalW }}>
-              {/* Month labels */}
-              <div className="flex border-b border-zinc-800/60 h-5">
-                {monthGroups.map((mg, i) => (
-                  <div key={i} style={{ width: mg.count * DAY_PX, minWidth: 0 }}
-                    className="border-r border-zinc-800/40 px-1.5 overflow-hidden">
-                    <span className="text-xs text-zinc-500 font-medium whitespace-nowrap">{mg.label}</span>
+
+            {/* date columns */}
+            <div className="flex-1" style={{width:totalDays*DAY_W}}>
+              {/* month row */}
+              <div className="flex" style={{height:HDR_H1,borderBottom:"1px solid rgba(255,255,255,0.05)"}}>
+                {months.map((mg,i)=>(
+                  <div key={i} className="flex items-center px-3 overflow-hidden shrink-0"
+                    style={{width:mg.count*DAY_W,borderRight:"1px solid rgba(255,255,255,0.05)",background:i%2===0?"rgba(255,255,255,0.01)":"transparent"}}>
+                    <span className="text-[11px] font-black text-zinc-400 whitespace-nowrap">{mg.label}</span>
                   </div>
                 ))}
               </div>
-              {/* Day numbers */}
-              <div className="flex h-6">
-                {days.map((d, i) => {
-                  const isToday   = d.getTime() === today.getTime();
-                  const isWeekend = d.getDay() === 0 || d.getDay() === 6;
+              {/* day row */}
+              <div className="flex" style={{height:HDR_H2,borderBottom:"1px solid rgba(255,255,255,0.08)"}}>
+                {days.map((d,i)=>{
+                  const isToday = d.getTime()===today.getTime();
+                  const isWknd  = d.getDay()===0||d.getDay()===6;
                   return (
-                    <div key={i} style={{ width: DAY_PX, minWidth: DAY_PX }}
-                      className={`border-r border-zinc-800/30 flex items-center justify-center text-xs
-                        ${isToday ? "text-indigo-400 font-bold" : isWeekend ? "text-zinc-700" : "text-zinc-600"}`}>
-                      {d.getDate()}
+                    <div key={i} className="flex flex-col items-center justify-center shrink-0 relative"
+                      style={{width:DAY_W,borderRight:"1px solid rgba(255,255,255,0.03)",background:isToday?"rgba(99,102,241,0.12)":isWknd?"rgba(255,255,255,0.01)":"transparent"}}>
+                      {isToday && <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-1 h-1 rounded-full bg-indigo-400"/>}
+                      <span className={`text-[11px] font-bold leading-none ${isToday?"text-indigo-300":isWknd?"text-zinc-700":"text-zinc-500"}`}>
+                        {d.getDate()}
+                      </span>
+                      {viewMode==="week"&&(
+                        <span className="text-[9px] text-zinc-700 mt-0.5 leading-none">
+                          {d.toLocaleDateString("en-US",{weekday:"short"}).slice(0,2)}
+                        </span>
+                      )}
                     </div>
                   );
                 })}
@@ -1170,97 +1162,112 @@ function GanttView({ tasks, members, projectId, onTaskUpdated }) {
             </div>
           </div>
 
-          {/* Task rows */}
-          {validTasks.map((task, rowIdx) => {
-            const { bg, border } = barColor(task);
-            const left  = taskLeft(task);
-            const width = taskWidth(task);
+          {/* ── TASK ROWS ── */}
+          {valid.map((task, idx)=>{
+            const {bg:color, glow} = barColor(task);
+            const left         = taskLeft(task);
+            const width        = taskWidth(task);
             const completedPct = task.mark_complete ? 100 : 0;
+            const assigneeInit = (task.assignee_email||"?")[0].toUpperCase();
+            const isHov        = hovered===task.id;
+            const isEven       = idx%2===0;
 
             return (
-              <div key={task.id}
-                className={`flex border-b border-zinc-800/40 hover:bg-zinc-900/40 transition-colors group ${rowIdx % 2 === 0 ? "" : "bg-zinc-900/20"}`}
-                style={{ height: 44 }}>
+              <div key={task.id} className="flex group transition-colors"
+                style={{height:ROW_H,borderBottom:"1px solid rgba(255,255,255,0.04)",background:isEven?"rgba(255,255,255,0.008)":"transparent"}}>
 
-                {/* Label */}
-                <div className="shrink-0 border-r border-zinc-800/60 px-3 flex items-center gap-2"
-                  style={{ width: LABEL_W }}>
-                  <div className="w-2 h-2 rounded-sm shrink-0" style={{ background: bg }} />
-                  <span
-                    onClick={() => setDetailTask(task)}
-                    className={`text-xs truncate cursor-pointer hover:text-white transition-colors ${task.mark_complete ? "line-through text-zinc-600" : "text-zinc-300"}`}
-                    title={task.title}>
+                {/* label */}
+                <div className="shrink-0 flex items-center gap-2.5 px-4"
+                  style={{width:LBL_W,borderRight:"1px solid rgba(255,255,255,0.05)"}}>
+                  {/* status dot */}
+                  <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{background:color,boxShadow:`0 0 6px ${glow}`}}/>
+                  <span onClick={()=>setDetailTask(task)}
+                    className={`text-[12.5px] truncate cursor-pointer hover:text-white transition-colors flex-1 font-medium ${task.mark_complete?"line-through text-zinc-600":"text-zinc-300"}`}>
                     {task.title}
                   </span>
-                  <button onClick={(e) => { e.stopPropagation(); setEditTask(task); }}
-                    className="opacity-0 group-hover:opacity-100 transition-opacity text-zinc-700 hover:text-zinc-400 shrink-0 ml-auto">
-                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                      <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
-                      <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
-                    </svg>
+                  <button onClick={e=>{e.stopPropagation();setEditTask(task);}}
+                    className="opacity-0 group-hover:opacity-100 transition-opacity w-6 h-6 rounded-lg flex items-center justify-center text-zinc-600 hover:text-zinc-200 hover:bg-white/5 shrink-0">
+                    <Edit3 size={11}/>
                   </button>
                 </div>
 
-                {/* Bar area */}
-                <div className="relative flex-1" style={{ width: totalW }}>
-                  {/* Weekend / today shading */}
-                  {days.map((d, i) => {
-                    const isToday   = d.getTime() === today.getTime();
-                    const isWeekend = d.getDay() === 0 || d.getDay() === 6;
-                    if (!isToday && !isWeekend) return null;
+                {/* bar area */}
+                <div className="relative overflow-hidden" style={{width:totalDays*DAY_W,height:ROW_H}}>
+
+                  {/* vertical grid lines per day */}
+                  {days.map((d,i)=>{
+                    const isT = d.getTime()===today.getTime();
+                    const isW = d.getDay()===0||d.getDay()===6;
+                    if(!isT&&!isW) return null;
                     return (
-                      <div key={i}
-                        className={`absolute top-0 bottom-0 ${isToday ? "bg-indigo-500/6" : "bg-zinc-800/30"}`}
-                        style={{ left: i * DAY_PX, width: DAY_PX }}
-                      />
+                      <div key={i} className="absolute top-0 bottom-0"
+                        style={{left:i*DAY_W,width:DAY_W,background:isT?"rgba(99,102,241,0.06)":"rgba(255,255,255,0.012)"}}/>
                     );
                   })}
 
-                  {/* Today line */}
-                  {todayLeft >= 0 && todayLeft <= totalW && (
-                    <div className="absolute top-0 bottom-0 w-px bg-indigo-500/50 z-10"
-                      style={{ left: todayLeft + DAY_PX / 2 }} />
+                  {/* today line — sharp indigo */}
+                  {todayLeft>=0&&todayLeft<=totalDays*DAY_W&&(
+                    <div className="absolute top-0 bottom-0 z-10 pointer-events-none"
+                      style={{left:todayLeft+DAY_W/2-0.5,width:1,background:"linear-gradient(180deg,rgba(99,102,241,0.8),rgba(99,102,241,0.2))"}}>
+                      <div className="w-2 h-2 rounded-full absolute -top-1 -left-[3.5px]" style={{background:"#6366f1",boxShadow:"0 0 6px rgba(99,102,241,0.8)"}}/>
+                    </div>
                   )}
 
-                  {/* Task bar */}
+                  {/* ── task bar ── */}
                   <div
-                    onClick={() => setDetailTask(task)}
-                    onMouseEnter={() => setHoveredTask(task.id)}
-                    onMouseLeave={() => setHoveredTask(null)}
-                    className="absolute top-1/2 -translate-y-1/2 rounded-md cursor-pointer transition-all hover:brightness-110 select-none"
+                    onClick={()=>setDetailTask(task)}
+                    onMouseEnter={()=>setHovered(task.id)}
+                    onMouseLeave={()=>setHovered(null)}
+                    className="absolute rounded-lg cursor-pointer transition-all"
                     style={{
-                      left:    left,
-                      width:   width,
-                      height:  24,
-                      background: bg,
-                      border:  `1px solid ${border}`,
-                      boxShadow: hoveredTask === task.id ? `0 0 0 2px ${bg}44` : "none",
+                      left: left+2,
+                      width: width-4,
+                      top: "50%",
+                      transform: "translateY(-50%)",
+                      height: 26,
+                      background: `linear-gradient(135deg,${color},${color}cc)`,
+                      boxShadow: isHov ? `0 4px 16px ${glow}, 0 0 0 2px ${color}60` : `0 2px 8px ${glow}`,
+                      opacity: task.mark_complete ? 0.7 : 1,
+                      transition: "box-shadow 0.15s ease, transform 0.1s ease",
+                      transform: isHov ? "translateY(calc(-50% - 1px))" : "translateY(-50%)",
                     }}
                   >
-                    {/* Progress fill */}
-                    {completedPct > 0 && (
-                      <div className="absolute inset-0 rounded-md bg-black/20" style={{ width: `${completedPct}%` }} />
+                    {/* glass highlight strip */}
+                    <div className="absolute top-0 left-0 right-0 h-px rounded-t-lg" style={{background:"rgba(255,255,255,0.3)"}}/>
+
+                    {/* completion fill */}
+                    {completedPct>0&&(
+                      <div className="absolute inset-0 rounded-lg" style={{width:`${completedPct}%`,background:"rgba(0,0,0,0.25)"}}/>
                     )}
-                    {/* Label inside bar if wide enough */}
-                    {width > 60 && (
-                      <div className="absolute inset-0 flex items-center px-2 gap-1.5 overflow-hidden">
-                        <span className="text-white/90 font-semibold text-xs"
-                          style={{ fontSize: 10 }}>{assigneeInitial(task)}</span>
-                        <span className="text-white/80 text-xs truncate" style={{ fontSize: 11 }}>{task.title}</span>
+
+                    {/* label inside bar */}
+                    {(width-4)>56&&(
+                      <div className="absolute inset-0 flex items-center px-2.5 gap-1.5 overflow-hidden">
+                        <span className="text-white/90 font-black text-[10px] shrink-0 w-4 h-4 rounded-full flex items-center justify-center" style={{background:"rgba(0,0,0,0.2)"}}>
+                          {assigneeInit}
+                        </span>
+                        <span className="text-white/90 text-[11px] font-semibold truncate">{task.title}</span>
                       </div>
                     )}
                   </div>
 
-                  {/* Tooltip */}
-                  {hoveredTask === task.id && (
+                  {/* ── tooltip ── */}
+                  {isHov&&(
                     <div className="absolute z-30 pointer-events-none"
-                      style={{ left: Math.min(left + width / 2, totalW - 160), top: "calc(50% + 16px)" }}>
-                      <div className="bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 shadow-2xl w-48">
-                        <p className="text-xs font-semibold text-zinc-200 mb-1 truncate">{task.title}</p>
-                        <p className="text-xs text-zinc-500">{formatDate(task.startDate)} → {formatDate(task.dueDate)}</p>
-                        <div className="flex items-center gap-1.5 mt-1">
-                          <div className="w-1.5 h-1.5 rounded-sm" style={{ background: bg }} />
-                          <span className="text-xs text-zinc-500">{task.status} · {task.priority}</span>
+                      style={{
+                        left: Math.min(left+width/2-80, totalDays*DAY_W-180),
+                        top: "calc(50% + 20px)",
+                        minWidth: 172,
+                      }}>
+                      <div className="rounded-xl px-3.5 py-2.5 shadow-2xl" style={{background:"#111119",border:"1px solid rgba(255,255,255,0.12)",boxShadow:"0 16px 40px rgba(0,0,0,0.8)"}}>
+                        <div className="flex items-center gap-2 mb-1.5">
+                          <div className="w-2 h-2 rounded-full" style={{background:color}}/>
+                          <p className="text-[12px] font-bold text-zinc-100 truncate">{task.title}</p>
+                        </div>
+                        <p className="text-[10.5px] text-zinc-500 mb-1">{formatDate(task.startDate)} → {formatDate(task.dueDate)}</p>
+                        <div className="flex items-center gap-2">
+                          <span className="text-[10px] font-bold px-1.5 py-0.5 rounded" style={{color:PCOL[task.priority]||"#71717a",background:`${PCOL[task.priority]||"#71717a"}18`}}>{task.priority}</span>
+                          <span className="text-[10px] text-zinc-600">{task.status}</span>
                         </div>
                       </div>
                     </div>
@@ -1269,214 +1276,143 @@ function GanttView({ tasks, members, projectId, onTaskUpdated }) {
               </div>
             );
           })}
+
+          {/* bottom padding row */}
+          <div style={{height:24}}/>
         </div>
       </div>
 
-      {/* Modals */}
-      {editTask && (
-        <TaskModal open={!!editTask} onClose={() => setEditTask(null)} projectId={projectId} task={editTask}
-          members={members} onSaved={() => { setEditTask(null); onTaskUpdated?.(); }} />
-      )}
-      <TaskDetailModal open={!!detailTask} task={detailTask} projectId={projectId} members={members}
-        onClose={() => setDetailTask(null)}
-        onSaved={() => { setDetailTask(null); onTaskUpdated?.(); }}
-        onEdit={(t) => setEditTask(t)} />
+      {editTask&&<TaskModal open={!!editTask} onClose={()=>setEditTask(null)} projectId={projectId} task={editTask} members={members} onSaved={()=>{setEditTask(null);onTaskUpdated?.();}}/>}
+      <TaskDetailModal open={!!detailTask} task={detailTask} projectId={projectId} members={members} onClose={()=>setDetailTask(null)} onSaved={()=>{setDetailTask(null);onTaskUpdated?.();}} onEdit={t=>setEditTask(t)}/>
     </div>
   );
 }
 
-// ─── MEETING NOTES → TASKS ────────────────────────────────────────────────────
+/* ─── MEETING NOTES VIEW ──────────────────────────────────────────────────── */
 function MeetingNotesView({ projectId, members, onTaskCreated }) {
   const { user } = useAuth();
-  const [notes,         setNotes]         = useState("");
-  const [extracting,    setExtracting]    = useState(false);
-  const [extracted,     setExtracted]     = useState([]);
-  const [creating,      setCreating]      = useState(false);
-  const [created,       setCreated]       = useState(false);
+  const [notes,      setNotes]      = useState("");
+  const [extracting, setExtracting] = useState(false);
+  const [extracted,  setExtracted]  = useState([]);
+  const [creating,   setCreating]   = useState(false);
+  const [created,    setCreated]    = useState(false);
 
   const handleExtract = async () => {
-    if (!notes.trim()) { showToast("Paste your meeting notes first", "warning"); return; }
+    if (!notes.trim()){showToast("Paste meeting notes first","warning");return;}
     setExtracting(true); setExtracted([]); setCreated(false);
     try {
       const tasks = await extractTasksFromMeetingNotes(notes.trim());
-      if (!tasks.length) { showToast("No actionable tasks found — try adding more detail", "warning"); return; }
-      setExtracted(tasks.map((t) => {
-        const hint    = (t.assigneeHint || "").toLowerCase();
-        const matched = hint ? members.find((m) => (m.fullname || m.emailuser || "").toLowerCase().includes(hint)) : null;
-        return { ...t, assigneEmail: matched?.emailuser || user.email, _editing: false };
+      if (!tasks.length){showToast("No actionable tasks found","warning");return;}
+      setExtracted(tasks.map(t=>{
+        const hint=(t.assigneeHint||"").toLowerCase();
+        const m=hint?members.find(m=>(m.fullname||m.emailuser||"").toLowerCase().includes(hint)):null;
+        return{...t,assigneEmail:m?.emailuser||user.email,_editing:false};
       }));
-      showToast(`Found ${tasks.length} actionable tasks`, "success");
-    } catch (e) { showToast(e.message, "error"); }
-    finally { setExtracting(false); }
+    } catch(e){showToast(e.message,"error");}
+    finally{setExtracting(false);}
   };
 
-  const updateTask  = (i, patch) => setExtracted((p) => p.map((t, idx) => idx === i ? { ...t, ...patch } : t));
-  const removeTask  = (i)        => setExtracted((p) => p.filter((_, idx) => idx !== i));
+  const update = (i,p) => setExtracted(e=>e.map((t,idx)=>idx===i?{...t,...p}:t));
+  const remove = i     => setExtracted(e=>e.filter((_,idx)=>idx!==i));
 
-  const handleCreateAll = async () => {
-    if (!extracted.length) return;
+  const handleCreate = async () => {
     setCreating(true);
     try {
-      const today   = new Date();
-      const dueDate = new Date(today); dueDate.setDate(dueDate.getDate() + 7);
-      await api.tasks.add(user.id, projectId, extracted.map((t) => ({
-        title:        t.title,
-        description:  t.notes || "",
-        priority:     t.priority || "Medium",
-        status:       "Todo",
-        assigneEmail: t.assigneEmail || user.email,
-        startDate:    today.toISOString(),
-        dueDate:      dueDate.toISOString(),
-      })));
-      showToast(`Created ${extracted.length} tasks from meeting notes`, "success");
-      setCreated(true); setExtracted([]); setNotes("");
-      onTaskCreated?.();
-    } catch (e) { showToast(e.message, "error"); }
-    finally { setCreating(false); }
+      const today=new Date(); const due=new Date(today); due.setDate(due.getDate()+7);
+      await api.tasks.add(user.id,projectId,extracted.map(t=>({title:t.title,description:t.notes||"",priority:t.priority||"Medium",status:"Todo",assigneEmail:t.assigneEmail||user.email,startDate:today.toISOString(),dueDate:due.toISOString()})));
+      showToast(`Created ${extracted.length} tasks`,"success");
+      setCreated(true); setExtracted([]); setNotes(""); onTaskCreated?.();
+    }catch(e){showToast(e.message,"error");}
+    finally{setCreating(false);}
   };
 
-  const pColors = { High: "text-red-400 bg-red-500/10 border-red-500/20", Medium: "text-amber-400 bg-amber-500/10 border-amber-500/20", Low: "text-emerald-400 bg-emerald-500/10 border-emerald-500/20" };
+  const pCls = { High:"#ef4444",Medium:"#f59e0b",Low:"#10b981" };
 
   return (
     <div className="p-6 max-w-3xl mx-auto">
-      {/* Header */}
       <div className="flex items-center gap-3 mb-6">
-        <div className="w-9 h-9 rounded-xl bg-violet-500/15 border border-violet-500/25 flex items-center justify-center">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#a78bfa" strokeWidth="2">
-            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
-            <polyline points="14 2 14 8 20 8"/>
-            <line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/>
-          </svg>
+        <div className="w-10 h-10 rounded-2xl flex items-center justify-center" style={{background:"linear-gradient(135deg,rgba(139,92,246,0.2),rgba(99,102,241,0.12))",border:"1px solid rgba(139,92,246,0.3)"}}>
+          <FileText size={17} className="text-violet-300" strokeWidth={1.8}/>
         </div>
         <div>
-          <h2 className="text-sm font-semibold text-zinc-200">Meeting Notes → Tasks</h2>
-          <p className="text-xs text-zinc-500">Paste any meeting notes — AI extracts actionable tasks, priorities, and assignees</p>
+          <h2 className="text-[15px] font-black text-white">Meeting Notes → Tasks</h2>
+          <p className="text-[11px] text-zinc-600 mt-0.5">AI extracts actionable tasks, priorities, and assignees</p>
         </div>
       </div>
 
-      {/* Paste area */}
       <div className="relative mb-3">
-        <textarea
-          value={notes}
-          onChange={(e) => { setNotes(e.target.value); setCreated(false); }}
-          placeholder={"Paste your meeting notes here…\n\nExample:\n— Discussed Q3 roadmap\n— John will redesign the onboarding flow by Friday\n— Need to fix the payment bug before launch\n— Sarah to write API documentation\n— Schedule user testing session next week"}
-          rows={10}
-          className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-3.5 text-sm text-zinc-300 placeholder-zinc-600/60 focus:outline-none focus:border-violet-500/50 resize-none transition-all font-mono leading-relaxed"
-        />
-        {notes && (
-          <button onClick={() => { setNotes(""); setExtracted([]); setCreated(false); }}
-            className="absolute top-3 right-3 p-1 rounded-md text-zinc-600 hover:text-zinc-400 hover:bg-zinc-800 transition-colors">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 6 6 18M6 6l12 12"/></svg>
-          </button>
-        )}
+        <textarea value={notes} onChange={e=>{setNotes(e.target.value);setCreated(false);}} placeholder={"Paste meeting notes here…\n\nExample:\n— John will redesign onboarding by Friday\n— Fix payment bug before launch\n— Sarah to write API docs"} rows={9} className="w-full rounded-2xl px-4 py-3.5 text-[13px] text-zinc-300 placeholder-zinc-700/60 outline-none resize-none font-mono leading-relaxed" style={{background:"rgba(255,255,255,0.02)",border:"1px solid rgba(255,255,255,0.07)",fontFamily:"'JetBrains Mono',monospace"}}/>
+        {notes&&<button onClick={()=>{setNotes("");setExtracted([]);setCreated(false);}} className="absolute top-3 right-3 w-6 h-6 rounded-lg flex items-center justify-center text-zinc-600 hover:text-zinc-400 hover:bg-white/5 transition-all"><X size={11}/></button>}
       </div>
 
-      {/* Extract button */}
-      <button onClick={handleExtract} disabled={extracting || !notes.trim()}
-        className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-semibold
-          bg-gradient-to-br from-violet-600 to-indigo-600 text-white
-          hover:from-violet-500 hover:to-indigo-500 shadow-lg shadow-violet-900/30
-          disabled:opacity-50 disabled:cursor-not-allowed transition-all mb-6">
-        {extracting
-          ? <><span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Extracting tasks…</>
-          : <><Sparkle size={13} /> Extract Tasks with AI</>}
+      <button onClick={handleExtract} disabled={extracting||!notes.trim()} className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-[13px] font-black text-white mb-6 disabled:opacity-50 transition-all hover:-translate-y-px" style={{background:"linear-gradient(135deg,#6366f1,#7c3aed)",boxShadow:"0 4px 20px rgba(99,102,241,0.4)"}}>
+        {extracting?<><Loader2 size={14} className="animate-spin"/>Extracting…</>:<><Sparkles size={13}/>Extract Tasks with AI</>}
       </button>
 
-      {/* Success banner */}
-      {created && (
-        <div className="flex items-center gap-2.5 p-3.5 mb-5 rounded-xl bg-emerald-500/10 border border-emerald-500/20">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#10b981" strokeWidth="2.5"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
-          <span className="text-sm text-emerald-400 font-medium">Tasks created and added to the board!</span>
+      {created&&(
+        <div className="flex items-center gap-2.5 p-3.5 mb-5 rounded-xl" style={{background:"rgba(16,185,129,0.08)",border:"1px solid rgba(16,185,129,0.2)"}}>
+          <CheckCircle2 size={14} className="text-emerald-400 shrink-0"/>
+          <span className="text-[13px] text-emerald-400 font-semibold">Tasks created and added to the board!</span>
         </div>
       )}
 
-      {/* Extracted task list */}
-      {extracted.length > 0 && (
+      {extracted.length>0&&(
         <div>
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2">
-              <span className="text-xs font-semibold text-zinc-300">Extracted Tasks</span>
-              <span className="text-xs bg-violet-500/15 text-violet-400 border border-violet-500/25 px-1.5 py-0.5 rounded-md font-medium">{extracted.length}</span>
+              <span className="text-[12px] font-black text-zinc-300">Extracted Tasks</span>
+              <span className="text-[10px] font-black px-1.5 py-0.5 rounded-full" style={{color:"#a5b4fc",background:"rgba(99,102,241,0.15)",border:"1px solid rgba(99,102,241,0.25)"}}>{extracted.length}</span>
             </div>
-            <span className="text-xs text-zinc-600">Click title to edit · drag to reorder</span>
+            <span className="text-[10.5px] text-zinc-700">Click title to edit</span>
           </div>
           <div className="space-y-2 mb-4">
-            {extracted.map((task, i) => (
-              <div key={i} className="bg-zinc-900 border border-zinc-800 rounded-xl p-3.5 group hover:border-zinc-700 transition-colors">
-                <div className="flex items-start gap-3">
-                  <span className={`mt-0.5 shrink-0 text-xs font-semibold px-1.5 py-0.5 rounded border ${pColors[task.priority] || pColors.Medium}`}>
-                    {task.priority}
-                  </span>
-                  <div className="flex-1 min-w-0">
-                    {task._editing ? (
-                      <input autoFocus value={task.title}
-                        onChange={(e) => updateTask(i, { title: e.target.value })}
-                        onBlur={() => updateTask(i, { _editing: false })}
-                        onKeyDown={(e) => { if (e.key === "Enter" || e.key === "Escape") updateTask(i, { _editing: false }); }}
-                        className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-2.5 py-1 text-sm text-zinc-200 focus:outline-none focus:border-violet-500/50 mb-1.5"
-                      />
-                    ) : (
-                      <p onClick={() => updateTask(i, { _editing: true })}
-                        className="text-sm text-zinc-200 font-medium cursor-text hover:text-white mb-1.5 leading-snug" title="Click to edit">
-                        {task.title}
-                      </p>
-                    )}
-                    {task.notes && <p className="text-xs text-zinc-500 leading-relaxed mb-2">{task.notes}</p>}
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <select value={task.priority} onChange={(e) => updateTask(i, { priority: e.target.value })}
-                        className="bg-zinc-800 border border-zinc-700 rounded-md px-1.5 py-0.5 text-xs text-zinc-400 focus:outline-none">
-                        {["High","Medium","Low"].map((p) => <option key={p}>{p}</option>)}
-                      </select>
-                      <select value={task.assigneEmail} onChange={(e) => updateTask(i, { assigneEmail: e.target.value })}
-                        className="bg-zinc-800 border border-zinc-700 rounded-md px-1.5 py-0.5 text-xs text-zinc-400 focus:outline-none max-w-[160px]">
-                        {members.map((m) => (
-                          <option key={m.emailuser} value={m.emailuser}>{m.fullname || m.emailuser.split("@")[0]}</option>
-                        ))}
-                      </select>
-                      {task.assigneeHint && (
-                        <span className="text-xs text-violet-400/60 italic">AI: {task.assigneeHint}</span>
-                      )}
+            {extracted.map((task,i)=>{
+              const c=pCls[task.priority]||"#f59e0b";
+              return (
+                <div key={i} className="group rounded-2xl p-3.5 transition-all hover:bg-white/[0.02]" style={{background:"rgba(255,255,255,0.02)",border:"1px solid rgba(255,255,255,0.07)"}}>
+                  <div className="flex items-start gap-3">
+                    <span className="shrink-0 px-2 py-0.5 rounded-lg text-[10px] font-black mt-0.5" style={{color:c,background:`${c}15`,border:`1px solid ${c}28`}}>{task.priority}</span>
+                    <div className="flex-1 min-w-0">
+                      {task._editing
+                        ? <input autoFocus value={task.title} onChange={e=>update(i,{title:e.target.value})} onBlur={()=>update(i,{_editing:false})} onKeyDown={e=>{if(e.key==="Enter"||e.key==="Escape")update(i,{_editing:false});}} className="w-full rounded-lg px-2.5 py-1 text-[13px] text-zinc-200 outline-none mb-1.5" style={{background:"rgba(255,255,255,0.06)",border:"1px solid rgba(99,102,241,0.35)",fontFamily:FONT}}/>
+                        : <p onClick={()=>update(i,{_editing:true})} className="text-[13px] text-zinc-200 font-semibold cursor-text hover:text-white mb-1.5 leading-snug">{task.title}</p>
+                      }
+                      {task.notes&&<p className="text-[11.5px] text-zinc-500 leading-relaxed mb-2">{task.notes}</p>}
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <select value={task.priority} onChange={e=>update(i,{priority:e.target.value})} className="rounded-lg px-1.5 py-0.5 text-[11px] text-zinc-400 outline-none" style={{background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.07)",fontFamily:FONT}}>
+                          {["High","Medium","Low"].map(p=><option key={p} style={{background:"#1a1a2e"}}>{p}</option>)}
+                        </select>
+                        <select value={task.assigneEmail} onChange={e=>update(i,{assigneEmail:e.target.value})} className="rounded-lg px-1.5 py-0.5 text-[11px] text-zinc-400 outline-none max-w-[160px]" style={{background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.07)",fontFamily:FONT}}>
+                          {members.map(m=><option key={m.emailuser} value={m.emailuser} style={{background:"#1a1a2e"}}>{m.fullname||m.emailuser.split("@")[0]}</option>)}
+                        </select>
+                      </div>
                     </div>
+                    <button onClick={()=>remove(i)} className="opacity-0 group-hover:opacity-100 transition-opacity text-zinc-700 hover:text-red-400"><X size={13}/></button>
                   </div>
-                  <button onClick={() => removeTask(i)}
-                    className="opacity-0 group-hover:opacity-100 transition-opacity text-zinc-700 hover:text-red-400 shrink-0 mt-0.5">
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 6 6 18M6 6l12 12"/></svg>
-                  </button>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
-          <button onClick={handleCreateAll} disabled={creating}
-            className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-semibold
-              bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg shadow-emerald-900/30
-              disabled:opacity-60 disabled:cursor-not-allowed transition-all">
-            {creating
-              ? <><span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />Creating…</>
-              : <><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M12 5v14M5 12h14"/></svg>
-                  Create {extracted.length} Task{extracted.length !== 1 ? "s" : ""} in Project</>}
+          <button onClick={handleCreate} disabled={creating} className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-[13px] font-black text-white disabled:opacity-60 transition-all hover:-translate-y-px" style={{background:"linear-gradient(135deg,#059669,#047857)",boxShadow:"0 4px 16px rgba(5,150,105,0.35)"}}>
+            {creating?<><Loader2 size={14} className="animate-spin"/>Creating…</>:<><Check size={13}/>Create {extracted.length} Task{extracted.length!==1?"s":""}</>}
           </button>
         </div>
       )}
 
-      {/* Empty state */}
-      {!extracted.length && !extracting && !created && (
-        <div className="flex flex-col items-center justify-center py-12 border border-dashed border-zinc-800 rounded-xl">
-          <div className="w-12 h-12 rounded-2xl bg-zinc-800/60 flex items-center justify-center mb-3">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#6366f1" strokeWidth="1.5">
-              <path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/>
-            </svg>
-          </div>
-          <p className="text-sm text-zinc-500 font-medium mb-1">Paste your meeting notes above</p>
-          <p className="text-xs text-zinc-700">AI will identify tasks, priorities, and who to assign them to</p>
+      {!extracted.length&&!extracting&&!created&&(
+        <div className="flex flex-col items-center justify-center py-14 rounded-2xl gap-3" style={{border:"1.5px dashed rgba(255,255,255,0.06)"}}>
+          <Sparkles size={22} className="text-zinc-700"/>
+          <p className="text-[13px] text-zinc-600 font-medium">Paste meeting notes above</p>
+          <p className="text-[11.5px] text-zinc-700">AI will identify tasks, priorities, and assignees</p>
         </div>
       )}
     </div>
   );
 }
 
-// ─── SMART DIGEST MODAL ───────────────────────────────────────────────────────
-function SmartDigestButton({ projects, tasks, projectId }) {
-  const { user }    = useAuth();
+/* ─── SMART DIGEST ────────────────────────────────────────────────────────── */
+function SmartDigest({ projects, tasks, projectId }) {
+  const { user }  = useAuth();
   const [open,      setOpen]      = useState(false);
   const [digest,    setDigest]    = useState("");
   const [loading,   setLoading]   = useState(false);
@@ -1487,134 +1423,90 @@ function SmartDigestButton({ projects, tasks, projectId }) {
   const generate = async () => {
     setLoading(true); setDigest(""); setSentDone(false);
     try {
-      let recentLogs = [];
-      try { const d = await api.activity.getByUser(user.id); recentLogs = d.logs || []; } catch (_) {}
-      const projectData = (projects || []).map((p) => ({
-        projectName:   p.projectName,
-        totalTask:     (tasks || []).length,
-        completedTask: (tasks || []).filter((t) => t.mark_complete).length,
-        tasks:         tasks || [],
-      }));
-      const text = await generateSmartDigest({ user, projects: projectData, recentLogs });
-      setDigest(text); setGenerated(true);
-    } catch (e) { setDigest("Could not generate digest: " + e.message); }
-    finally { setLoading(false); }
-  };
-
-  const handleSendToAll = async () => {
-    if (!digest || !projectId) return;
-    setSending(true); setSentDone(false);
-    try {
-      const projectName = projects?.[0]?.projectName || "";
-      const res = await api.projects.sendDigest(user.id, projectId, digest, projectName);
-      showToast(res.message || "Digest sent to all members!", "success");
-      setSentDone(true);
-    } catch (e) { showToast(e.message || "Failed to send digest", "error"); }
-    finally { setSending(false); }
+      let logs=[];
+      try{const d=await api.activity.getByUser(user.id);logs=d.logs||[];}catch(_){}
+      const pData=(projects||[]).map(p=>({projectName:p.projectName,totalTask:(tasks||[]).length,completedTask:(tasks||[]).filter(t=>t.mark_complete).length,tasks:tasks||[]}));
+      setDigest(await generateSmartDigest({user,projects:pData,recentLogs:logs}));
+      setGenerated(true);
+    }catch(e){setDigest("Could not generate digest: "+e.message);}
+    finally{setLoading(false);}
   };
 
   const handleOpen = () => { setOpen(true); if (!generated) generate(); };
 
-  const renderDigest = (text) => {
+  const handleSend = async () => {
+    if (!digest||!projectId) return;
+    setSending(true);
+    try{const res=await api.projects.sendDigest(user.id,projectId,digest,projects?.[0]?.projectName||"");showToast(res.message||"Digest sent!","success");setSentDone(true);}
+    catch(e){showToast(e.message||"Failed to send","error");}
+    finally{setSending(false);}
+  };
+
+  const renderDigest = text => {
     if (!text) return null;
-    return text.split("\n").map((line, i) => {
-      if (!line.trim()) return <div key={i} className="h-1.5" />;
-      const emoji = ["🌅","📌","✅","🎯"];
-      if (emoji.some((e) => line.startsWith(e))) {
-        const icon = line[0]; const rest = line.slice(1).trim();
-        return (
-          <div key={i} className="flex items-center gap-2 mt-5 first:mt-0 mb-2">
-            <span className="text-lg leading-none">{icon}</span>
-            <span className="text-xs font-bold text-zinc-100 uppercase tracking-wider">{rest}</span>
-          </div>
-        );
-      }
-      if (line.trimStart().startsWith("•") || line.trimStart().startsWith("-")) {
-        return (
-          <div key={i} className="flex items-start gap-2 pl-2 mb-1.5">
-            <span className="text-violet-400/70 shrink-0 mt-0.5 text-xs">▸</span>
-            <span className="text-xs text-zinc-300 leading-relaxed">{line.replace(/^[\s•\-]+/, "")}</span>
-          </div>
-        );
-      }
-      return <p key={i} className="text-xs text-zinc-400 leading-relaxed mb-1">{line}</p>;
+    return text.split("\n").map((line,i)=>{
+      if (!line.trim()) return <div key={i} className="h-1.5"/>;
+      const emojis=["🌅","📌","✅","🎯"];
+      if (emojis.some(e=>line.startsWith(e))) return (
+        <div key={i} className="flex items-center gap-2 mt-5 first:mt-0 mb-2">
+          <span className="text-base">{line[0]}</span>
+          <span className="text-[10.5px] font-black uppercase tracking-widest text-zinc-100">{line.slice(1).trim()}</span>
+        </div>
+      );
+      if (line.trimStart().startsWith("•")||line.trimStart().startsWith("-")) return (
+        <div key={i} className="flex items-start gap-2 pl-2 mb-1.5">
+          <span className="text-violet-400/60 shrink-0 mt-0.5 text-[10px]">▸</span>
+          <span className="text-[12px] text-zinc-300 leading-relaxed">{line.replace(/^[\s•\-]+/,"")}</span>
+        </div>
+      );
+      return <p key={i} className="text-[12px] text-zinc-400 leading-relaxed mb-1">{line}</p>;
     });
   };
 
   return (
     <>
-      <button onClick={handleOpen}
-        className="fixed bottom-6 right-6 z-40 flex items-center gap-2 px-4 py-2.5 rounded-full
-          bg-gradient-to-br from-violet-600 to-indigo-600 text-white text-xs font-semibold
-          shadow-2xl shadow-violet-900/60 hover:from-violet-500 hover:to-indigo-500
-          hover:scale-105 active:scale-95 transition-all border border-white/10"
-        title="Smart Digest — your AI daily briefing">
-        <Sparkle size={12} /> Smart Digest
+      <button onClick={handleOpen} className="fixed bottom-6 right-6 z-40 flex items-center gap-2 px-4 py-2.5 rounded-full text-[12px] font-black text-white transition-all hover:scale-105 active:scale-95" style={{ background:"linear-gradient(135deg,#6366f1,#7c3aed)", boxShadow:"0 8px 32px rgba(99,102,241,0.5),0 0 0 1px rgba(255,255,255,0.1)", border:"1px solid rgba(255,255,255,0.12)" }}>
+        <Sparkles size={12}/> Smart Digest
+        {/* pulse ring */}
+        <span className="absolute inset-0 rounded-full animate-ping opacity-20" style={{background:"#6366f1"}}/>
       </button>
 
-      {open && (
-        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={() => setOpen(false)} />
-          <div className="relative w-full max-w-md max-h-[80vh] flex flex-col bg-zinc-950 border border-zinc-800 rounded-2xl shadow-2xl overflow-hidden">
-            {/* Header */}
-            <div className="flex items-center justify-between px-5 py-4 border-b border-zinc-800 shrink-0">
-              <div className="flex items-center gap-3">
-                <div className="w-8 h-8 rounded-xl bg-violet-500/15 border border-violet-500/25 flex items-center justify-center">
-                  <Sparkle size={13} />
-                </div>
-                <div>
-                  <h3 className="text-sm font-semibold text-zinc-200">Smart Digest</h3>
-                  <p className="text-xs text-zinc-600">Your personalized AI daily briefing</p>
-                </div>
+      {open&&(
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4" style={{fontFamily:FONT}}>
+          <div className="absolute inset-0 backdrop-blur-sm" style={{background:"rgba(0,0,0,0.78)"}} onClick={()=>setOpen(false)}/>
+          <div className="relative w-full max-w-md max-h-[80vh] flex flex-col rounded-2xl overflow-hidden" style={{background:"#0e0e16",border:"1px solid rgba(255,255,255,0.09)",boxShadow:"0 32px 64px rgba(0,0,0,0.9)"}}>
+            <div className="h-[1px]" style={{background:"linear-gradient(90deg,#6366f1,#8b5cf6,transparent 60%)"}}/>
+            <div className="absolute top-0 left-0 w-32 h-32 pointer-events-none" style={{background:"radial-gradient(circle,rgba(99,102,241,0.15),transparent 70%)",transform:"translate(-20%,-20%)"}}/>
+
+            <div className="flex items-center gap-3 px-5 py-4 shrink-0" style={{borderBottom:"1px solid rgba(255,255,255,0.06)"}}>
+              <div className="w-8 h-8 rounded-xl flex items-center justify-center" style={{background:"linear-gradient(135deg,rgba(99,102,241,0.2),rgba(139,92,246,0.12))",border:"1px solid rgba(99,102,241,0.3)"}}>
+                <Sparkles size={13} className="text-indigo-300"/>
               </div>
-              <button onClick={() => setOpen(false)} className="p-1.5 rounded-lg text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800 transition-colors">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 6 6 18M6 6l12 12"/></svg>
-              </button>
+              <div className="flex-1">
+                <h3 className="text-[14px] font-black text-white">Smart Digest</h3>
+                <p className="text-[10.5px] text-zinc-600 mt-0.5">Your personalized AI briefing</p>
+              </div>
+              <button onClick={()=>setOpen(false)} className="w-7 h-7 rounded-xl flex items-center justify-center text-zinc-600 hover:text-zinc-200 hover:bg-white/5 transition-all"><X size={13}/></button>
             </div>
-            {/* Body */}
-            <div className="flex-1 overflow-y-auto px-5 py-4">
-              {loading ? (
-                <div className="flex flex-col items-center justify-center py-12 gap-3">
-                  <div className="relative">
-                    <span className="w-8 h-8 border-2 border-zinc-800 border-t-violet-500 rounded-full animate-spin block" />
-                    <Sparkle size={12} />
+
+            <div className="flex-1 overflow-y-auto px-5 py-4" style={{scrollbarWidth:"none"}}>
+              {loading
+                ? <div className="flex flex-col items-center justify-center py-12 gap-3">
+                    <Loader2 size={20} className="animate-spin text-indigo-400"/>
+                    <p className="text-[12px] text-zinc-500">Analysing your project…</p>
                   </div>
-                  <p className="text-xs text-zinc-500">Analysing your projects and activity…</p>
-                </div>
-              ) : digest ? (
-                <div className="pb-2">{renderDigest(digest)}</div>
-              ) : null}
+                : <div className="pb-2">{renderDigest(digest)}</div>
+              }
             </div>
-            {/* Footer */}
-            <div className="px-5 py-3 border-t border-zinc-800 shrink-0 flex items-center gap-2">
-              {/* Regenerate */}
-              <button onClick={() => { setGenerated(false); generate(); }} disabled={loading || sending}
-                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium bg-zinc-800 hover:bg-zinc-700 text-zinc-400 transition-colors disabled:opacity-40"
-                title="Regenerate digest">
-                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+
+            <div className="flex items-center gap-2 px-5 py-3.5 shrink-0" style={{borderTop:"1px solid rgba(255,255,255,0.06)",background:"rgba(0,0,0,0.2)"}}>
+              <button onClick={()=>{setGenerated(false);generate();}} disabled={loading||sending} className="w-7 h-7 rounded-xl flex items-center justify-center text-zinc-600 hover:text-zinc-200 hover:bg-white/5 transition-all disabled:opacity-40">
+                <RefreshCw size={12}/>
               </button>
-
-              <div className="flex-1" />
-
-              {/* Send to all members */}
-              {digest && !loading && (
-                <button
-                  onClick={handleSendToAll}
-                  disabled={sending || sentDone}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all
-                    ${sentDone
-                      ? "bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 cursor-default"
-                      : "bg-indigo-600 hover:bg-indigo-500 text-white shadow-md shadow-indigo-900/40 disabled:opacity-60 disabled:cursor-not-allowed"
-                    }`}
-                  title="Email digest to all project members"
-                >
-                  {sending ? (
-                    <><span className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />Sending…</>
-                  ) : sentDone ? (
-                    <><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M20 6 9 17l-5-5"/></svg>Sent!</>
-                  ) : (
-                    <><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>Send to all members</>
-                  )}
+              <div className="flex-1"/>
+              {digest&&!loading&&(
+                <button onClick={handleSend} disabled={sending||sentDone} className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11.5px] font-black text-white transition-all disabled:opacity-60" style={{ background:sentDone?"rgba(16,185,129,0.15)":"linear-gradient(135deg,#6366f1,#7c3aed)", border:sentDone?"1px solid rgba(16,185,129,0.3)":"none", color:sentDone?"#34d399":"white" }}>
+                  {sending?<><Loader2 size={11} className="animate-spin"/>Sending…</>:sentDone?<><Check size={11}/>Sent!</>:<><Send size={11}/>Send to all members</>}
                 </button>
               )}
             </div>
@@ -1625,106 +1517,134 @@ function SmartDigestButton({ projects, tasks, projectId }) {
   );
 }
 
-// ─── MAIN PROJECT PAGE ────────────────────────────────────────────────────────
+/* ─── VIEW NAV META ───────────────────────────────────────────────────────── */
+const VIEWS = [
+  { id:"board",    Icon:LayoutGrid,     label:"Board"         },
+  { id:"list",     Icon:List,           label:"List"          },
+  { id:"dashboard",Icon:BarChart2,      label:"Dashboard"     },
+  { id:"members",  Icon:Users,          label:"Members"       },
+  { id:"chat",     Icon:MessageSquare,  label:"Chat"          },
+  { id:"files",    Icon:Paperclip,      label:"Files"         },
+  { id:"activity", Icon:Activity,       label:"Activity"      },
+  { id:"gantt",    Icon:GitBranch,      label:"Timeline"      },
+  { id:"notes",    Icon:FileText,       label:"Meeting Notes" },
+];
+
+/* ─── MAIN PAGE ───────────────────────────────────────────────────────────── */
 export default function ProjectPage() {
   const { projectId }  = useParams();
   const { user }       = useAuth();
-  const [project,      setProject]      = useState(null);
-  const [members,      setMembers]      = useState([]);
-  const [tasks,        setTasks]        = useState([]);
-  const [loading,      setLoading]      = useState(true);
-  const [activeView,   setActiveView]   = useState("board");
-  const [showAddTask,  setShowAddTask]  = useState(false);
-  const [currentUserRole, setCurrentUserRole] = useState("EDITOR");
+  const [project,    setProject]    = useState(null);
+  const [members,    setMembers]    = useState([]);
+  const [tasks,      setTasks]      = useState([]);
+  const [loading,    setLoading]    = useState(true);
+  const [activeView, setActiveView] = useState("board");
+  const [showAdd,    setShowAdd]    = useState(false);
+  const [myRole,     setMyRole]     = useState("EDITOR");
 
-  const loadProject = useCallback(async () => {
-    try {
-      const [detail, taskData] = await Promise.all([
-        api.projects.getDetail(user.id, projectId),
-        api.tasks.getAllWithSubtasks(user.id, projectId),
-      ]);
-      setProject(detail.projectDetail);
-      setMembers(detail.projectMember || []);
-      setTasks(taskData.TasksDetail || []);
-      const me = detail.projectMember?.find((m) => m.emailuser === user.email);
-      if (me) setCurrentUserRole(me.role);
-    } catch (e) { showToast(e.message, "error"); }
-    finally { setLoading(false); }
-  }, [user?.id, projectId]);
+  const load = useCallback(async()=>{
+    try{
+      const [detail,taskData]=await Promise.all([api.projects.getDetail(user.id,projectId),api.tasks.getAllWithSubtasks(user.id,projectId)]);
+      setProject(detail.projectDetail); setMembers(detail.projectMember||[]); setTasks(taskData.TasksDetail||[]);
+      const me=detail.projectMember?.find(m=>m.emailuser===user.email);
+      if(me) setMyRole(me.role);
+    }catch(e){showToast(e.message,"error");}
+    finally{setLoading(false);}
+  },[user?.id,projectId]);
 
-  useEffect(() => { loadProject(); }, [loadProject]);
+  useEffect(()=>{load();},[load]);
 
-  const views = [
-    { id: "board",     icon: "grid",       label: "Board"     },
-    { id: "list",      icon: "list",       label: "List"      },
-    { id: "dashboard", icon: "bar",        label: "Dashboard" },
-    { id: "members",   icon: "users",      label: "Members"   },
-    { id: "chat",      icon: "message",    label: "Chat"      },
-    { id: "files",     icon: "paperclip",  label: "Files"     },
-    { id: "activity",  icon: "activity",   label: "Activity"  },
-    { id: "gantt",     icon: "bar",        label: "Timeline"      },
-    { id: "notes",     icon: "edit",       label: "Meeting Notes" },
-  ];
+  const color    = getProjectColor(projectId);
+  const canEdit  = !["VIEWER","COMMENTER"].includes(myRole);
+  const roleCl   = ROLE_COLOR[myRole]||"#71717a";
 
-  const color   = getProjectColor(projectId);
-  const canEdit = !["VIEWER","COMMENTER"].includes(currentUserRole);
+  const completedCnt = tasks.filter(t=>t.mark_complete).length;
+  const overdueCnt   = tasks.filter(t=>isOverdue(t)).length;
+  const pct          = tasks.length?Math.round((completedCnt/tasks.length)*100):0;
 
   if (loading) return (
     <AppLayout>
-      <div className="flex items-center justify-center h-64"><Spinner size={24} /></div>
+      <div className="flex items-center justify-center h-64"><Loader2 size={20} className="animate-spin text-zinc-600"/></div>
     </AppLayout>
   );
 
   return (
     <AppLayout>
+      <style>{`@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&display=swap');* { font-family: 'Outfit', sans-serif; }`}</style>
       <div className="flex flex-col h-full">
-        {/* Project header */}
-        <div className="flex items-center gap-3 px-6 py-4 border-b border-zinc-800 shrink-0">
-          <div className="w-8 h-8 rounded-lg flex items-center justify-center font-bold text-sm shrink-0" style={{ background: color + "33", border: `1px solid ${color}44`, color }}>
-            {(project?.projectName || "?")[0]}
+
+        {/* ── Project Header ── */}
+        <div className="relative flex items-center gap-4 px-5 py-4 shrink-0" style={{ borderBottom:"1px solid rgba(255,255,255,0.07)", background:"linear-gradient(180deg,rgba(255,255,255,0.02),transparent)" }}>
+          {/* color stripe */}
+          <div className="absolute left-0 top-0 bottom-0 w-0.5" style={{background:`linear-gradient(180deg,${color},${color}30)`}}/>
+
+          {/* project icon */}
+          <div className="w-10 h-10 rounded-2xl flex items-center justify-center font-black text-[15px] shrink-0" style={{ background:`${color}20`, border:`1px solid ${color}35`, color, boxShadow:`0 0 20px ${color}18` }}>
+            {(project?.projectName||"?")[0].toUpperCase()}
           </div>
+
           <div className="flex-1 min-w-0">
-            <h1 className="text-sm font-semibold text-zinc-200">{project?.projectName}</h1>
-            <p className="text-xs text-zinc-500 truncate">{project?.description}</p>
+            <h1 className="text-[15px] font-black text-white">{project?.projectName}</h1>
+            <p className="text-[11.5px] text-zinc-600 truncate mt-0.5">{project?.description}</p>
           </div>
-          <Badge variant={currentUserRole.toLowerCase()}>{currentUserRole}</Badge>
+
+          {/* progress mini bar */}
+          <div className="hidden sm:flex items-center gap-3 mr-2">
+            <div className="text-right">
+              <p className="text-[11px] font-black text-zinc-300">{pct}%</p>
+              <p className="text-[10px] text-zinc-700">{completedCnt}/{tasks.length} done</p>
+            </div>
+            <div className="w-20 h-1.5 rounded-full" style={{background:"rgba(255,255,255,0.06)"}}>
+              <div className="h-full rounded-full transition-all" style={{width:`${pct}%`,background:pct>=100?"#10b981":"#6366f1"}}/>
+            </div>
+          </div>
+
+          {overdueCnt>0&&(
+            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-[11px] font-black" style={{background:"rgba(239,68,68,0.1)",border:"1px solid rgba(239,68,68,0.25)",color:"#f87171"}}>
+              <AlertTriangle size={10}/>{overdueCnt} overdue
+            </div>
+          )}
+
+          <span className="px-2.5 py-1 rounded-xl text-[10.5px] font-black shrink-0" style={{color:roleCl,background:`${roleCl}15`,border:`1px solid ${roleCl}28`}}>{myRole}</span>
         </div>
 
-        {/* View tabs */}
-        <div className="flex items-center gap-1 px-6 py-2.5 border-b border-zinc-800 overflow-x-auto shrink-0">
-          {views.map((v) => (
-            <button
-              key={v.id}
-              onClick={() => setActiveView(v.id)}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors whitespace-nowrap ${activeView === v.id ? "bg-zinc-800 text-zinc-100" : "text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/40"}`}
-            >
-              <Icon name={v.icon} size={13} />{v.label}
-            </button>
-          ))}
+        {/* ── View Tabs ── */}
+        <div className="flex items-center gap-0.5 px-4 py-2 shrink-0 overflow-x-auto" style={{borderBottom:"1px solid rgba(255,255,255,0.06)",scrollbarWidth:"none"}}>
+          {VIEWS.map(({id,Icon,label})=>{
+            const active = activeView===id;
+            return (
+              <button
+                key={id}
+                onClick={()=>setActiveView(id)}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[12px] font-bold transition-all whitespace-nowrap"
+                style={{
+                  background:active?"rgba(255,255,255,0.06)":"transparent",
+                  color:active?"#e4e4e7":"#52525b",
+                  borderBottom:active?`2px solid ${color}`:"2px solid transparent",
+                }}
+              >
+                <Icon size={12} strokeWidth={active?2:1.8}/>{label}
+              </button>
+            );
+          })}
         </div>
 
-        {/* Content */}
-        <div className="flex-1 overflow-y-auto">
-          {activeView === "board"     && <KanbanView      tasks={tasks} members={members} projectId={projectId} onAddTask={() => canEdit && setShowAddTask(true)} onTaskUpdated={loadProject} />}
-          {activeView === "list"      && <ListView        tasks={tasks} members={members} projectId={projectId} onAddTask={() => canEdit && setShowAddTask(true)} onTaskUpdated={loadProject} />}
-          {activeView === "dashboard" && <DashboardAnalytics projectId={projectId} />}
-          {activeView === "members"   && <MembersView     members={members} projectId={projectId} currentUserRole={currentUserRole} onMemberAdded={loadProject} />}
-          {activeView === "chat"      && <ChatView        projectId={projectId} members={members} onTaskCreated={loadProject} />}
-          {activeView === "files"     && <FilesView       projectId={projectId} tasks={tasks} />}
-          {activeView === "activity"  && <ActivityView    projectId={projectId} />}
-          {activeView === "gantt"     && <GanttView        tasks={tasks} members={members} projectId={projectId} onTaskUpdated={loadProject} />}
-          {activeView === "notes"     && <MeetingNotesView projectId={projectId} members={members} onTaskCreated={loadProject} />}
+        {/* ── View Content ── */}
+        <div className="flex-1 overflow-y-auto" style={{scrollbarWidth:"thin",scrollbarColor:"rgba(255,255,255,0.06) transparent"}}>
+          {activeView==="board"     && <KanbanView      tasks={tasks} members={members} projectId={projectId} onAddTask={()=>canEdit&&setShowAdd(true)} onTaskUpdated={load}/>}
+          {activeView==="list"      && <ListView        tasks={tasks} members={members} projectId={projectId} onAddTask={()=>canEdit&&setShowAdd(true)} onTaskUpdated={load}/>}
+          {activeView==="dashboard" && <DashboardView   projectId={projectId}/>}
+          {activeView==="members"   && <MembersView     members={members} projectId={projectId} currentUserRole={myRole} onMemberAdded={load}/>}
+          {activeView==="chat"      && <ChatView        projectId={projectId} members={members} onTaskCreated={load}/>}
+          {activeView==="files"     && <FilesView       projectId={projectId} tasks={tasks}/>}
+          {activeView==="activity"  && <ActivityView    projectId={projectId}/>}
+          {activeView==="gantt"     && <GanttView       tasks={tasks} members={members} projectId={projectId} onTaskUpdated={load}/>}
+          {activeView==="notes"     && <MeetingNotesView projectId={projectId} members={members} onTaskCreated={load}/>}
         </div>
       </div>
 
-      <SmartDigestButton projects={project ? [project] : []} tasks={tasks} projectId={projectId} />
-      <TaskModal
-        open={showAddTask}
-        onClose={() => setShowAddTask(false)}
-        projectId={projectId}
-        members={members}
-        onSaved={loadProject}
-      />
+      <SmartDigest projects={project?[project]:[]} tasks={tasks} projectId={projectId}/>
+      <TaskModal open={showAdd} onClose={()=>setShowAdd(false)} projectId={projectId} members={members} onSaved={load}/>
     </AppLayout>
   );
 }

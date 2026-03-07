@@ -12,8 +12,8 @@
 //   app.use("/api/v1/chat",         chatRoute)
 //   app.use("/api/v1/search",       searchRoute)
 
-const BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000/api/v1";
-// const BASE_URL =  "https://planzo-project-management.onrender.com/api/v1";
+// const BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000/api/v1";
+const BASE_URL =  "https://planzo-project-management.onrender.com/api/v1";
 
 
 // ─── TOKEN HELPERS ──────────────────────────────────────────────────────────

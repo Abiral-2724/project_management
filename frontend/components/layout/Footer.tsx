@@ -16,16 +16,16 @@ const LINKS = {
     { label: "Status",         href: "#", external: true },
   ],
   Company: [
-    { label: "About",       href: "#" },
-    { label: "Blog",        href: "#", external: true },
+    { label: "About",       href: "/about" },
+    { label: "Blog",        href: "/blog", external: true },
     { label: "Careers",     href: "#", external: true },
-    { label: "Contact",     href: "#" },
+    { label: "Contact",     href: "/contact" },
   ],
   Legal: [
-    { label: "Privacy Policy",   href: "/privacy" },
-    { label: "Terms of Service", href: "/terms"   },
-    { label: "Cookie Policy",    href: "#"        },
-    { label: "Security",         href: "#"        },
+    { label: "Privacy Policy",   href: "/privacypolicy" },
+    { label: "Terms of Service", href: "/termsofservice"   },
+    { label: "Cookie Policy",    href: "/cookiepolicy"        },
+    { label: "Security",         href: "/securitypage"        },
   ],
 };
 

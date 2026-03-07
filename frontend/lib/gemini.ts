@@ -3,7 +3,7 @@
 // Get a free key at https://aistudio.google.com/app/apikey
 
 // gemini-2.5-flash: confirmed free tier on v1beta generateContent
-const MODEL  = "gemini-2.5-flash";
+const MODEL  = "gemini-2.5-flash-lite";
 const getUrl = () =>
   `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${process.env.NEXT_PUBLIC_GEMINI_API_KEY}`;
 
@@ -244,4 +244,62 @@ ${projectSummary}
 Recent activity:
 ${recentActivity}
 `, 700);
+}
+
+// ─── 8. PROJECT AI ASSISTANT ──────────────────────────────────────────────────
+// Input : { project, tasks, members, activityLogs, chatHistory, userMessage }
+// Output: assistant reply string
+export async function askProjectAssistant({ project, tasks, members, activityLogs, chatHistory, userMessage }) {
+  // Build a rich project context snapshot
+  const totalTasks     = tasks.length;
+  const completedTasks = tasks.filter((t) => t.mark_complete).length;
+  const overdueTasks   = tasks.filter((t) => !t.mark_complete && t.dueDate && new Date(t.dueDate) < new Date());
+  const inProgress     = tasks.filter((t) => t.status === "In Progress");
+  const inReview       = tasks.filter((t) => t.status === "In Review");
+  const todoTasks      = tasks.filter((t) => t.status === "Todo" && !t.mark_complete);
+
+  const taskList = tasks.slice(0, 40).map((t) =>
+    `- [${t.mark_complete ? "✓" : t.status}] ${t.title} | Priority: ${t.priority} | Assignee: ${t.assignee_email || "unassigned"}${t.dueDate ? ` | Due: ${new Date(t.dueDate).toLocaleDateString()}` : ""}${!t.mark_complete && t.dueDate && new Date(t.dueDate) < new Date() ? " ⚠ OVERDUE" : ""}`
+  ).join("\n");
+
+  const memberList = members.slice(0, 20).map((m) =>
+    `- ${m.fullname || m.emailuser} (${m.role}) — ${m.emailuser}`
+  ).join("\n");
+
+  const recentActivity = activityLogs.slice(0, 20).map((l) => {
+    const meta = typeof l.meta === "string" ? JSON.parse(l.meta || "{}") : (l.meta || {});
+    return `• ${l.action?.replace(/_/g, " ").toLowerCase()}: ${meta.taskTitle || meta.subtaskTitle || meta.fileName || ""}`;
+  }).join("\n");
+
+  // Build prior conversation for context (last 10 messages)
+  const priorChat = (chatHistory || []).slice(-10).map((m) =>
+    `${m.role === "user" ? "User" : "Assistant"}: ${m.content}`
+  ).join("\n");
+
+  return callGemini(`
+You are Nexus AI, an expert project management assistant embedded inside the Nexus project management tool.
+You have FULL access to the project data below. Answer questions helpfully, specifically, and concisely.
+You can answer questions about tasks, team members, progress, blockers, timelines, priorities, and give advice.
+When listing tasks, use bullet points. Keep answers under 250 words unless a detailed breakdown is explicitly asked for.
+Do NOT say you don't have access to data — all project data is provided below. Be direct and confident.
+
+━━━━━━━━━━━━━━━━━━━━
+PROJECT: ${project.projectName}
+Description: ${project.description || "No description"}
+Created: ${new Date(project.createdAt).toLocaleDateString()}
+
+SUMMARY: ${completedTasks}/${totalTasks} tasks complete | ${overdueTasks.length} overdue | ${inProgress.length} in progress | ${inReview.length} in review | ${todoTasks.length} todo
+
+TEAM MEMBERS (${members.length}):
+${memberList || "No members"}
+
+ALL TASKS (${totalTasks}):
+${taskList || "No tasks"}
+
+RECENT ACTIVITY:
+${recentActivity || "No recent activity"}
+━━━━━━━━━━━━━━━━━━━━
+
+${priorChat ? `CONVERSATION SO FAR:\n${priorChat}\n\n` : ""}User question: ${userMessage}
+`, 600);
 }

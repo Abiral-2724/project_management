@@ -1,5 +1,6 @@
 "use client";
 import { useState, useEffect, useRef } from "react";
+import { createPortal } from "react-dom";
 import { useRouter, usePathname } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { useSocket } from "@/context/SocketContext";
@@ -35,19 +36,40 @@ function useBreadcrumb() {
   );
 }
 
-// ── Panel wrapper ───────────────────────────────────────────────────────────
-function Panel({ children, className = "" }) {
-  return (
+// ── Portal Panel — renders at body level, positioned with fixed ─────────────
+function PortalPanel({ anchorRef, open, children, width = 340, align = "right" }) {
+  const [coords, setCoords] = useState({ top: 0, right: 0, left: 0 });
+
+  useEffect(() => {
+    if (!open || !anchorRef.current) return;
+    const rect = anchorRef.current.getBoundingClientRect();
+    setCoords({
+      top:   rect.bottom + 8,            // 8px gap below the trigger
+      right: window.innerWidth - rect.right,
+      left:  rect.left,
+    });
+  }, [open, anchorRef]);
+
+  if (!open || typeof document === "undefined") return null;
+
+  return createPortal(
     <div
-      className={`absolute top-12 right-0 z-50 overflow-hidden rounded-2xl ${className}`}
       style={{
+        position:  "fixed",
+        top:       coords.top,
+        ...(align === "right" ? { right: coords.right } : { left: coords.left }),
+        width,
+        zIndex:    9999,          // above everything — sidebars, modals, etc.
+        borderRadius: 16,
+        overflow: "hidden",
         background: "linear-gradient(160deg,#111119,#0e0e16)",
         border: "1px solid rgba(255,255,255,0.07)",
         boxShadow: "0 32px 64px rgba(0,0,0,0.8),0 0 0 1px rgba(255,255,255,0.03)",
       }}
     >
       {children}
-    </div>
+    </div>,
+    document.body
   );
 }
 
@@ -58,14 +80,15 @@ export default function Topbar({ onSearchOpen, onSidebarToggle }) {
   const router = useRouter();
   const crumbs = useBreadcrumb();
 
-  const [showNotif,      setShowNotif]      = useState(false);
-  const [notifications,  setNotifications]  = useState([]);
-  const [unread,         setUnread]         = useState(0);
-  const [showProfile,    setShowProfile]    = useState(false);
+  const [showNotif,     setShowNotif]     = useState(false);
+  const [notifications, setNotifications] = useState([]);
+  const [unread,        setUnread]        = useState(0);
+  const [showProfile,   setShowProfile]   = useState(false);
+
   const notifRef   = useRef(null);
   const profileRef = useRef(null);
 
-  // load
+  // load notifications
   useEffect(() => {
     if (!user?.id) return;
     api.notifications.getAll(user.id)
@@ -82,11 +105,22 @@ export default function Topbar({ onSearchOpen, onSidebarToggle }) {
     });
   }, [socket]);
 
-  // outside click
+  // close on outside click — checks both anchors AND their portals
   useEffect(() => {
     const h = e => {
-      if (notifRef.current   && !notifRef.current.contains(e.target))   setShowNotif(false);
-      if (profileRef.current && !profileRef.current.contains(e.target)) setShowProfile(false);
+      // For each panel, if the click is outside both the trigger button AND the portal panel
+      // we close it. Since the portal is at body level we need a data attribute trick.
+      if (
+        notifRef.current &&
+        !notifRef.current.contains(e.target) &&
+        !e.target.closest("[data-panel='notif']")
+      ) setShowNotif(false);
+
+      if (
+        profileRef.current &&
+        !profileRef.current.contains(e.target) &&
+        !e.target.closest("[data-panel='profile']")
+      ) setShowProfile(false);
     };
     document.addEventListener("mousedown", h);
     return () => document.removeEventListener("mousedown", h);
@@ -100,26 +134,37 @@ export default function Topbar({ onSearchOpen, onSidebarToggle }) {
       setUnread(u => Math.max(0, u - 1));
     } catch {}
   };
+
   const markAll = async () => {
-    try { await api.notifications.markAllRead(user.id); setNotifications(p => p.map(n => ({ ...n, isRead: true }))); setUnread(0); } catch {}
+    try {
+      await api.notifications.markAllRead(user.id);
+      setNotifications(p => p.map(n => ({ ...n, isRead: true })));
+      setUnread(0);
+    } catch {}
   };
+
   const clearAll = async () => {
-    try { await api.notifications.clearAll(user.id); setNotifications([]); setUnread(0); } catch {}
+    try {
+      await api.notifications.clearAll(user.id);
+      setNotifications([]); setUnread(0);
+    } catch {}
   };
+
   const handleLogout = () => { setShowProfile(false); logout(); router.push("/auth/login"); };
 
   return (
     <header
       className="h-12 flex items-center justify-between shrink-0 px-3 gap-3"
       style={{
-        background: "rgba(9,9,15,0.85)",
-        borderBottom: "1px solid rgba(255,255,255,0.06)",
-        backdropFilter: "blur(16px)",
+        background:    "rgba(9,9,15,0.85)",
+        borderBottom:  "1px solid rgba(255,255,255,0.06)",
+        backdropFilter:"blur(16px)",
+        position:      "relative",
+        zIndex:        40,   // topbar itself sits above page content but below portals
       }}
     >
       {/* ── Left ── */}
       <div className="flex items-center gap-2 min-w-0">
-        {/* hamburger */}
         <button
           onClick={onSidebarToggle}
           className="w-7 h-7 rounded-lg flex items-center justify-center text-zinc-600 hover:text-zinc-300 hover:bg-zinc-800/60 transition-all shrink-0"
@@ -127,7 +172,6 @@ export default function Topbar({ onSearchOpen, onSidebarToggle }) {
           <Menu size={15} />
         </button>
 
-        {/* breadcrumb */}
         {crumbs.length > 0 && (
           <div className="hidden sm:flex items-center gap-1.5 text-[11px] font-medium min-w-0">
             {crumbs.map((c, i) => (
@@ -142,7 +186,7 @@ export default function Topbar({ onSearchOpen, onSidebarToggle }) {
         )}
       </div>
 
-      {/* ── Centre: search ── */}
+      {/* ── Centre: search trigger ── */}
       <button
         onClick={onSearchOpen}
         className="flex items-center gap-2 px-3 py-1.5 rounded-xl text-[12px] text-zinc-600 hover:text-zinc-400 transition-all group flex-1 max-w-xs"
@@ -170,28 +214,24 @@ export default function Topbar({ onSearchOpen, onSidebarToggle }) {
 
         <div className="w-px h-4 bg-zinc-800/80 mx-1" />
 
-        {/* Bell */}
+        {/* ── Bell ── */}
         <div className="relative" ref={notifRef}>
           <button
             onClick={() => { setShowNotif(v => !v); setShowProfile(false); }}
             className={`relative w-8 h-8 flex items-center justify-center rounded-xl transition-all ${
-              showNotif
-                ? "bg-zinc-800 text-zinc-200"
-                : "text-zinc-600 hover:text-zinc-300 hover:bg-zinc-800/60"
+              showNotif ? "bg-zinc-800 text-zinc-200" : "text-zinc-600 hover:text-zinc-300 hover:bg-zinc-800/60"
             }`}
           >
             <Bell size={15} strokeWidth={1.8} />
             {unread > 0 && (
-              <>
-                <span className="absolute top-1 right-1 w-[18px] h-[18px] rounded-full bg-indigo-600 flex items-center justify-center text-[8px] font-bold text-white ring-2 ring-[#09090f]">
-                  {unread > 9 ? "9+" : unread}
-                </span>
-              </>
+              <span className="absolute top-1 right-1 w-[18px] h-[18px] rounded-full bg-indigo-600 flex items-center justify-center text-[8px] font-bold text-white ring-2 ring-[#09090f]">
+                {unread > 9 ? "9+" : unread}
+              </span>
             )}
           </button>
 
-          {showNotif && (
-            <Panel className="w-[340px]">
+          <PortalPanel anchorRef={notifRef} open={showNotif} width={340} align="right">
+            <div data-panel="notif">
               {/* header */}
               <div className="flex items-center justify-between px-4 py-3" style={{ borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
                 <div className="flex items-center gap-2">
@@ -232,24 +272,16 @@ export default function Topbar({ onSearchOpen, onSidebarToggle }) {
                     <button
                       key={n.id}
                       onClick={() => markRead(n)}
-                      className={`w-full flex items-start gap-3 px-4 py-3 text-left transition-colors hover:bg-zinc-800/25 ${
-                        !n.isRead ? "bg-indigo-500/[0.03]" : ""
-                      } ${idx < notifications.length - 1 ? "border-b" : ""}`}
+                      className={`w-full flex items-start gap-3 px-4 py-3 text-left transition-colors hover:bg-zinc-800/25 ${!n.isRead ? "bg-indigo-500/[0.03]" : ""} ${idx < notifications.length - 1 ? "border-b" : ""}`}
                       style={{ borderColor: "rgba(255,255,255,0.05)" }}
                     >
-                      {/* icon */}
-                      <div
-                        className="w-8 h-8 rounded-xl flex items-center justify-center shrink-0 mt-0.5"
-                        style={{ background: `${color}15`, border: `1px solid ${color}28` }}
-                      >
+                      <div className="w-8 h-8 rounded-xl flex items-center justify-center shrink-0 mt-0.5" style={{ background: `${color}15`, border: `1px solid ${color}28` }}>
                         <NIcon size={13} style={{ color }} strokeWidth={1.8} />
                       </div>
-                      {/* content */}
                       <div className="flex-1 min-w-0 pt-0.5">
                         <p className="text-[12px] text-zinc-300 leading-snug font-medium">{n.message}</p>
                         <p className="text-[10px] text-zinc-600 mt-1 font-medium">{timeAgo(n.createdAt)}</p>
                       </div>
-                      {/* unread dot */}
                       {!n.isRead && (
                         <div className="w-1.5 h-1.5 rounded-full bg-indigo-500 mt-2 shrink-0" />
                       )}
@@ -266,11 +298,11 @@ export default function Topbar({ onSearchOpen, onSidebarToggle }) {
                   </button>
                 </div>
               )}
-            </Panel>
-          )}
+            </div>
+          </PortalPanel>
         </div>
 
-        {/* Avatar */}
+        {/* ── Avatar / Profile ── */}
         <div className="relative" ref={profileRef}>
           <button
             onClick={() => { setShowProfile(v => !v); setShowNotif(false); }}
@@ -282,15 +314,14 @@ export default function Topbar({ onSearchOpen, onSidebarToggle }) {
               <Avatar name={user?.fullname || "U"} src={user?.profile} size={26} color="#6366f1" />
               <span className="absolute -bottom-px -right-px w-2 h-2 bg-emerald-500 rounded-full border-[1.5px] border-[#09090f]" />
             </div>
-            <span className="hidden sm:block text-[12px] font-medium text-zinc-400 max-w-[80px] truncate">{user?.fullname?.split(" ")[0]}</span>
-            <ChevronDown
-              size={11}
-              className={`text-zinc-600 transition-transform duration-200 ${showProfile ? "rotate-180" : ""}`}
-            />
+            <span className="hidden sm:block text-[12px] font-medium text-zinc-400 max-w-[80px] truncate">
+              {user?.fullname?.split(" ")[0]}
+            </span>
+            <ChevronDown size={11} className={`text-zinc-600 transition-transform duration-200 ${showProfile ? "rotate-180" : ""}`} />
           </button>
 
-          {showProfile && (
-            <Panel className="w-64">
+          <PortalPanel anchorRef={profileRef} open={showProfile} width={256} align="right">
+            <div data-panel="profile">
               {/* user card */}
               <div className="px-4 pt-4 pb-3" style={{ borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
                 <div className="flex items-center gap-3 mb-3">
@@ -317,8 +348,8 @@ export default function Topbar({ onSearchOpen, onSidebarToggle }) {
               {/* actions */}
               <div className="p-1.5 space-y-0.5">
                 {[
-                  { icon: Settings2,    label: "Account Settings", href: "/settings" },
-                  { icon: CheckSquare,  label: "My Tasks",          href: "/my-tasks" },
+                  { icon: Settings2,   label: "Account Settings", href: "/settings"  },
+                  { icon: CheckSquare, label: "My Tasks",          href: "/my-tasks"  },
                 ].map(({ icon: I, label, href }) => (
                   <button
                     key={href}
@@ -341,9 +372,10 @@ export default function Topbar({ onSearchOpen, onSidebarToggle }) {
                   Sign out
                 </button>
               </div>
-            </Panel>
-          )}
+            </div>
+          </PortalPanel>
         </div>
+
       </div>
     </header>
   );
