@@ -1,6 +1,6 @@
 import express from "express";
 import { createServer } from "http";
-import { PrismaClient } from "@prisma/client";
+// import { PrismaClient } from "@prisma/client";
 import dotenv from "dotenv";
 import cors from "cors";
 
@@ -20,7 +20,7 @@ import searchRoute from "./routes/search.routes.js";
 import { initializeSocket } from "./utils/socket.js";
 import { startScheduler }   from "./scheduler.js";
 
-const client = new PrismaClient();
+// const client = new PrismaClient();
 const app = express();
 const httpServer = createServer(app); // Needed for Socket.IO
 const PORT = process.env.PORT || 4000;
