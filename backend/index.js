@@ -6,6 +6,7 @@ import cors from "cors";
 
 dotenv.config({});
 
+import client from "./prisma.js";
 import userAuthRoute from "./routes/user.auth.routes.js";
 import userRoute from "./routes/user.routes.js";
 import projectRoute from "./routes/project.routes.js";
@@ -16,7 +17,7 @@ import notificationsRoute from "./routes/notification.routes.js";
 import activityRoute from "./routes/activity.routes.js";
 import chatRoute from "./routes/chat.routes.js";
 import searchRoute from "./routes/search.routes.js";
-
+import { startDbKeepAlive } from "./utils/dbKeepAlive.js";
 import { initializeSocket } from "./utils/socket.js";
 import { startScheduler }   from "./scheduler.js";
 
@@ -52,6 +53,16 @@ app.get("/api/v1/health", (req, res) => {
   res.status(200).json({ status: "ok", timestamp: new Date().toISOString() });
 });
 
+app.get("/api/v1/health/db", async (req, res) => {
+  try {
+    await client.$queryRaw`SELECT 1`;
+    res.status(200).json({ status: "ok", db: "up", timestamp: new Date().toISOString() });
+  } catch (e) {
+    console.error("[health/db] failed:", e.message);
+    res.status(500).json({ status: "error", db: "down" });
+  }
+});
+
 // ─── WEBSOCKET ────────────────────────────────────────────────────────────────
 export const io = initializeSocket(httpServer);
 
@@ -60,14 +71,15 @@ httpServer.listen(PORT, () => {
   console.log(`Server running at port ${PORT}`);
   console.log(`WebSocket ready on port ${PORT}`);
   startScheduler();
+  startDbKeepAlive(); 
 
   if (process.env.NODE_ENV === "production") {
     const BACKEND_URL = "https://planzo-project-management.onrender.com"; // add this to Render env vars
     if (BACKEND_URL) {
       setInterval(async () => {
         try {
-          await fetch(`${BACKEND_URL}/api/v1/health`);
-          console.log("[keep-alive] ping sent");
+          const res = await fetch(`${BACKEND_URL}/api/v1/health/db`);
+          console.log("[keep-alive] ping sent" ,res.status);
         } catch (e) {
           console.warn("[keep-alive] ping failed:", e.message);
         }
